@@ -38,9 +38,8 @@ char *decompose_word(const char *word)
     decomposed[strlen(word)] = '\0';
     return decomposed;
 }
-
 /*função que conta a ocorrência de uma palavra em um arquivo */
-int count_words(const char *filename, int *count, char *word)
+int count_words(const char *filename, char *word)
 {
     FILE *file = fopen(filename, "rb");
     if (file == NULL)
@@ -73,6 +72,60 @@ int count_words(const char *filename, int *count, char *word)
     return word_count;
 }
 
+int count_words_RAM(const char *filename, char *word)
+{
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL)
+    {
+        perror("Erro ao abrir o arquivo");
+        return -1;
+    }
+    
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    rewind(file); 
+
+    char *buffer = (char *)malloc(length);
+    if (buffer == NULL)
+    {
+        perror("Erro ao alocar memória para o arquivo");
+        printf("Será necessario executar a versão de contagem sem RAM\n");
+        return count_words(filename, word);
+        fclose(file);
+    }
+
+    fread(buffer, 1, length, file);
+    fclose(file); 
+
+    int word_count = 0;
+    int len = strlen(word);
+
+    for (long i = 0; i < length; i++)
+    {
+        if (buffer[i] == word[0])
+        {
+            int flag = 1;
+
+            for (int j = 1; j < len; j++)
+            {
+                if (i + j >= length || buffer[i + j] != word[j])
+                {
+                    flag = 0;
+                    break;
+                }
+            }
+    
+            if (flag == 1)
+            {
+                word_count++;
+            }
+        }
+    }
+
+    free(buffer); 
+    return word_count;
+}
+
 
 int main()
 {
@@ -98,16 +151,19 @@ int main()
     // lembrar de mudar o nome desses arquivos para a apresentação
     const char *filename = "arquivo_texto_grande.txt";
     length = len_file(filename);
+   
+    clock_t start = clock();
+    word_count = count_words_RAM(filename, word);
+    clock_t end = clock();
+    double time = ((double)(end - start)) / CLOCKS_PER_SEC;
+
     printf("\n*************************************\n");
     printf("Tamanho do arquivo: %ld bytes\n", length);
     printf("Palavra a ser contada: %s\n", word);
-    clock_t start = clock();
-    word_count = count_words(filename, NULL, word);
-    clock_t end = clock();
-
-    double time = ((double)(end - start)) / CLOCKS_PER_SEC;
     printf("Tempo de execução: %f segundos\n", time);
     printf("Número de ocorrências: %d\n", word_count);
     printf("*************************************\n");
+
+    free(word);
     return 0;
 }
