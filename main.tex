@@ -1,0 +1,209 @@
+\documentclass[10pt,twocolumn,a4paper]{article}
+
+% Pacotes
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{cite}
+\usepackage{hyperref}
+
+% Margens
+\geometry{left=2cm, right=2cm, top=2cm, bottom=2cm}
+\setlength{\columnsep}{0.7cm}
+
+% Título
+\title{\textbf{Análise de Programação Paralela aplicada a [Problema Escolhido]}\\
+\large Sistemas Distribuídos / Programação Paralela -- UTFPR}
+
+\author{
+    Samuel Minuzzo Pereira \\
+    \texttt{samuelpereira@utfpr.edu.br}
+    \and
+    Edilson Daniel de Souza \\
+    \texttt{naoseioemail@utfpr.edu.br}
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% Resumo
+\begin{abstract}
+Este trabalho apresenta a implementação e análise de versões sequenciais e paralelas para o problema de [descrever problema]. Foram desenvolvidas soluções em Java e C, incluindo versões paralelas com threads e OpenMP. Os resultados são comparados em termos de desempenho e speedup.
+\end{abstract}
+
+\textbf{Palavras-chave:} Programação Paralela, Threads, OpenMP, Desempenho.
+
+% ------------------------------------------------
+
+\section{Introdução}
+Descreva:
+\begin{itemize}
+    \item O problema escolhido
+    \item Motivação
+    \item Objetivo do trabalho
+\end{itemize}
+
+% ------------------------------------------------
+
+\section{Descrição do Problema}
+Explique formalmente o problema escolhido (ex: ordenação, matriz, primos etc.).
+
+Inclua:
+\begin{itemize}
+    \item Entrada
+    \item Saída
+    \item Complexidade esperada
+\end{itemize}
+
+% ------------------------------------------------
+
+\section{Implementações}
+Esta seção descreve as quatro versões desenvolvidas.
+
+\subsection{Versão Sequencial em Java}
+Descreva a lógica da implementação.
+
+\subsection{Versão Sequencial em C}
+Descreva diferenças e particularidades.
+
+\subsection{Versão Paralela com Threads (Java)}
+Explique:
+\begin{itemize}
+    \item Estratégia de paralelização
+    \item Divisão de tarefas
+    \item Sincronização (se houver)
+\end{itemize}
+
+\subsection{Versão Paralela com OpenMP (C)}
+Explique:
+\begin{itemize}
+    \item Uso de \texttt{\#pragma omp}
+    \item Tipo de paralelismo (for, sections, etc.)
+\end{itemize}
+
+% ------------------------------------------------
+
+\section{Metodologia de Avaliação}
+
+\subsection{Ambiente de Testes}
+Descreva:
+\begin{itemize}
+    \item Hardware
+    \item Sistema operacional
+    \item Compiladores
+\end{itemize}
+
+\subsection{Métricas}
+O desempenho foi avaliado com base no tempo de execução e no cálculo do speedup:
+
+\begin{equation}
+Speedup = \frac{T_s}{T_p}
+\end{equation}
+
+Onde:
+\begin{itemize}
+    \item $T_s$ = tempo sequencial
+    \item $T_p$ = tempo paralelo
+\end{itemize}
+
+% ------------------------------------------------
+
+\section{Resultados}
+
+\subsection{Tempo de Execução}
+
+\begin{table}[h]
+\centering
+\caption{Tempo de execução}
+\begin{tabular}{cccc}
+\toprule
+Entrada & Java Seq & Java Par & OpenMP \\
+\midrule
+1000 & & & \\
+10000 & & & \\
+100000 & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Speedup}
+
+\begin{table}[h]
+\centering
+\caption{Speedup}
+\begin{tabular}{ccc}
+\toprule
+Entrada & Threads & OpenMP \\
+\midrule
+1000 & & \\
+10000 & & \\
+100000 & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Gráficos}
+Inclua gráficos:
+
+\begin{figure}[h]
+\centering
+%\includegraphics[width=0.45\textwidth]{grafico.png}
+\caption{Comparação de desempenho}
+\end{figure}
+
+% ------------------------------------------------
+
+\section{Discussão}
+
+Analise:
+\begin{itemize}
+    \item Ganho de desempenho
+    \item Escalabilidade
+    \item Overhead de threads
+    \item Diferença entre Java e OpenMP
+\end{itemize}
+
+% ------------------------------------------------
+
+\section{Dificuldades Encontradas}
+
+Descreva:
+\begin{itemize}
+    \item Problemas de concorrência
+    \item Debug
+    \item Sincronização
+\end{itemize}
+
+% ------------------------------------------------
+
+\section{Conclusão}
+
+Retome:
+\begin{itemize}
+    \item Principais resultados
+    \item Comparação entre abordagens
+    \item Trabalhos futuros
+\end{itemize}
+
+% ------------------------------------------------
+
+\begin{thebibliography}{99}
+
+\bibitem{tanenbaum}
+TANENBAUM, A. S.
+\textit{Distributed Systems}.
+
+\bibitem{openmp}
+OpenMP Architecture Review Board.
+\textit{OpenMP Specification}.
+
+\end{thebibliography}
+
+\end{document}
