@@ -48,41 +48,27 @@ int count_words(const char *filename, int *count, char *word)
         perror("Erro ao abrir o arquivo");
         return -1;
     }
-    
-    int c = fgetc(file);
+    int flag = 0;
+    int c;
     int word_count = 0;
-    char *decomposed_word = NULL;
-    decomposed_word = decompose_word(word);
+    int len = strlen(word);
 
-    while (c != EOF)
+    while ((c = fgetc(file))!= EOF)
     {
-        c = fgetc(file);
-        if (c == EOF)
-        {
-            break;
-        }
-        if (c == decomposed_word[0])
-        {
-            int flag = 1;
-            for (int i = 1; i < strlen(decomposed_word); i++){ 
+         if (c == (unsigned char)word[0]) {  
+            flag = 1;
+            for (int i = 1; i < len; i++) {
                 c = fgetc(file);
-                if (c != decomposed_word[i])
-                {
+                if (c == EOF || c != (unsigned char)word[i]) {
                     flag = 0;
-                    break;
-                }
-                if (c == EOF)
-                {
+                    fseek(file, -(i), SEEK_CUR);  
                     break;
                 }
             }
-            if (flag)
-            {
-                word_count++;
-            }
+            if (flag) word_count++;
         }
+        
     }
-    free(decomposed_word);
     fclose(file);
     return word_count;
 }
