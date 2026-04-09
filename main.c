@@ -96,7 +96,7 @@ int main()
 
     long length = 0;
     // lembrar de mudar o nome desses arquivos para a apresentação
-    const char *filename = "arquivo_texto_rasoavel.txt";
+    const char *filename = "arquivo_texto_grande.txt";
     length = len_file(filename);
     printf("\n*************************************\n");
     printf("Tamanho do arquivo: %ld bytes\n", length);
