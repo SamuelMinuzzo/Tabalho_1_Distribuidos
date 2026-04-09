@@ -1,4 +1,7 @@
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Scanner;
 
 public class Main {
@@ -8,47 +11,64 @@ public class Main {
     }
 
     public static int countWords(String filename, String word) throws IOException {
-    int wordCount = 0;
-    int wordLen = word.length();
-
-    // Converte String Unicode para bytes brutos (1 char = 1 byte)
-    // No C: char[] já é byte nativo
-    // Java: precisa explicitar ISO-8859-1 para igualar fgetc() do arquivo, se não não funciona direito com acentos
-    byte[] wordBytes = word.getBytes("ISO-8859-1");
-
-    
-    try (FileInputStream fis = new FileInputStream(filename)) {
-        int b;
-        int flag = 0; 
+        int wordCount = 0;
         
-        while ((b = fis.read()) != -1) {
-            byte currentByte = (byte) b;
-            
-            // Verifica PRIMEIRA letra
-            if (flag == 0 && currentByte == wordBytes[0]) {
-                flag = 1; 
+        //Cria os arrays de bytes baseados nos encodings
+        byte[][] allEncodings = {
+            word.getBytes("ISO-8859-1"),
+            word.getBytes("UTF-8"),
+            word.getBytes("Cp1252")
+        };
+        
+        List<byte[]> uniqueEncodings = new ArrayList<>();
+        for (byte[] enc : allEncodings) {
+            boolean isDuplicate = false;
+            for (byte[] unique : uniqueEncodings) {
+                if (Arrays.equals(enc, unique)) {
+                    isDuplicate = true;
+                    break;
+                }
             }
-          
-            else if (flag > 0) {
-                if (flag < wordLen && currentByte == wordBytes[flag]) {
-                    flag++;  
-                    if (flag == wordLen) {
-                        wordCount++;
-                        flag = 0;  
+            if (!isDuplicate && enc.length > 0) {
+                uniqueEncodings.add(enc);
+            }
+        }
+
+        try (RandomAccessFile file = new RandomAccessFile(filename, "r")) {
+        
+            for (byte[] wordBytes : uniqueEncodings) {
+                file.seek(0); 
+                int flag = 0;
+                int c;
+                int len = wordBytes.length;
+
+                while ((c = file.read()) != -1) {
+                    if (c == (wordBytes[0] & 0xFF)) {  
+                        flag = 1;
+                        for (int i = 1; i < len; i++) {
+                            c = file.read();
+                            if (c == -1 || c != (wordBytes[i] & 0xFF)) {
+                                flag = 0;
+                                file.seek(file.getFilePointer() - i);  
+                                break;
+                            }
+                        }
+                        
+                        if (flag == 1) {
+                            wordCount++;
+                        }
                     }
-                } else {
-                    flag = (currentByte == wordBytes[0]) ? 1 : 0;
                 }
             }
         }
+        return wordCount;
     }
-    return wordCount;
-}
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
+        String filename = "arquivo_texto_grande.txt";
         try {
-            long lenfile = lenFile("arquivo_texto_rasoavel.txt");
+            long lenfile = lenFile(filename);
             System.out.println("Tamanho do arquivo: " + lenfile + " bytes");
 
             System.out.print("Digite a palavra: ");
@@ -59,7 +79,7 @@ public class Main {
             }
 
             long startTime = System.nanoTime();
-            int count = countWords("arquivo_texto_rasoavel.txt", word);
+            int count = countWords(filename, word);
             long endTime = System.nanoTime();
 
             System.out.printf("Palavra '%s' ocorre %d vezes%n", word, count);
