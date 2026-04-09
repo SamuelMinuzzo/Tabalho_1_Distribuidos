@@ -1,127 +1,80 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 
-/*função que retorna o tamanho do arquivo em bytes */
-long int len_file(const char *filename)
-{
-    FILE *file = fopen(filename, "rb");
-    if (file == NULL)
-    {
-        perror("Erro ao abrir o arquivo");
-        return -1;
+void buffer_circular(int n, char *b){
+    for (int j = 0; j < n - 1; j++) {
+        b[j] = b[j + 1];
     }
-    fseek(file, 0, SEEK_END);
-    long int length = ftell(file);
-    fclose(file);
-    return length;
 }
 
-/*função que decompõe a palavra em caracteres individuais e retorna um ponteiro para a string decomposta */
-char *decompose_word(const char *word)
-{
-    if (word == NULL)
-    {
-        return NULL;
+void ini_buffer(int n, char *b){
+    for(int i = 0; i < n; i++){
+        b[i] = '\0';
     }
-    char *decomposed = malloc(strlen(word) + 1);
-    if (decomposed == NULL)
-    {
-        perror("Erro ao alocar memória");
-        return NULL;
-    }
-    for (int i = 0; i < strlen(word); i++)
-    {
-        decomposed[i] = word[i];
-    }
-    decomposed[strlen(word)] = '\0';
-    return decomposed;
 }
 
-/*função que conta a ocorrência de uma palavra em um arquivo */
-int count_words(const char *filename, int *count, char *word)
-{
-    FILE *file = fopen(filename, "rb");
-    if (file == NULL)
-    {
-        perror("Erro ao abrir o arquivo");
-        return -1;
-    }
-    
-    int c = fgetc(file);
-    int word_count = 0;
-    char *decomposed_word = NULL;
-    decomposed_word = decompose_word(word);
-
-    while (c != EOF)
-    {
-        c = fgetc(file);
-        if (c == EOF)
-        {
-            break;
-        }
-        if (c == decomposed_word[0])
-        {
-            int flag = 1;
-            for (int i = 1; i < strlen(decomposed_word); i++){ 
-                c = fgetc(file);
-                if (c != decomposed_word[i])
-                {
-                    flag = 0;
-                    break;
-                }
-                if (c == EOF)
-                {
-                    break;
-                }
-            }
-            if (flag)
-            {
-                word_count++;
-            }
+int compara_palavra(char *a, char *b, int n){
+    for(int i = 0; i < n; i++){
+        if(a[i] != b[i]){
+            return 0;
         }
     }
-    free(decomposed_word);
-    fclose(file);
-    return word_count;
+
+    return 1;
 }
 
+void conta_palavras_sequencial(char *palavra, char *arq, int tamanho_palavra){
+    FILE *arquivo = fopen(arq, "r");
 
-int main()
-{
-    int word_count = 0;
-    char *word = malloc(101 * sizeof(char));
-    if (word == NULL)
-    {
-        perror("Erro ao alocar memória");
-        return -1;
+    char buffer[tamanho_palavra + 1];
+    int count = 0,c = 0;
+
+    ini_buffer(tamanho_palavra, buffer);
+
+    if (arquivo != NULL){
+        printf("Arquivo aberto com sucesso\n");
     }
-    /* Primeira versão vai premitir apenas palavras sem espaços, basicamente faz o truncamento no espaço
-     e/ou quando passa do limite de 100 caracteres, mas isso tem que ser melhorado, pois ainda não avisa o usuário */
-
-    printf("Digite a palavra a ser contada: ");
-    if (scanf("%100s", word) != 1)
-    {
-        fprintf(stderr, "Erro ao ler a palavra\n");
-        free(word);
-        return -1;
+    else{
+        printf("Deu ruim edilson\n");
+        return;
     }
 
-    long length = 0;
-    // lembrar de mudar o nome desses arquivos para a apresentação
-    const char *filename = "arquivo_texto_rasoavel.txt";
-    length = len_file(filename);
-    printf("\n*************************************\n");
-    printf("Tamanho do arquivo: %ld bytes\n", length);
-    printf("Palavra a ser contada: %s\n", word);
-    clock_t start = clock();
-    word_count = count_words(filename, NULL, word);
-    clock_t end = clock();
+    printf("Palavra que sera procurada %s\n", palavra);
 
-    double time = ((double)(end - start)) / CLOCKS_PER_SEC;
-    printf("Tempo de execução: %f segundos\n", time);
-    printf("Número de ocorrências: %d\n", word_count);
-    printf("*************************************\n");
+    while((c = fgetc(arquivo)) != EOF){
+        //printf("%c", c); não descomente favor
+        buffer_circular(tamanho_palavra,buffer);
+        buffer[tamanho_palavra - 1] = c;
+
+        if(compara_palavra(buffer,palavra, tamanho_palavra)){
+            count++;
+        }
+
+    }
+
+    printf("Total de vezes encontrada: %d\n", count);
+
+    fclose(arquivo);
+
+}
+
+int main(){
+
+    char palavra[100]; //seguinte não pode passar disso, se não nem ideia de como resolve
+
+    printf("Digite a palavra que quer procurar: \n");
+    scanf("%s", palavra);
+
+    printf("palavra: %s\n", palavra);
+
+    clock_t ini = clock();
+    conta_palavras_sequencial(palavra, "arquivo_teste.txt", strlen(palavra));
+    clock_t fim = clock();
+    double tempo = (double)(fim - ini) / CLOCKS_PER_SEC;
+
+    printf("Tempo total de execucao: %.12f\n", tempo);
+
     return 0;
 }
