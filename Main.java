@@ -1,7 +1,4 @@
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Scanner;
 
 public class Main {
@@ -13,50 +10,33 @@ public class Main {
     public static int countWords(String filename, String word) throws IOException {
         int wordCount = 0;
         
-        //Cria os arrays de bytes baseados nos encodings
-        byte[][] allEncodings = {
-            word.getBytes("ISO-8859-1"),
-            word.getBytes("UTF-8"),
-            word.getBytes("Cp1252")
-        };
-        
-        List<byte[]> uniqueEncodings = new ArrayList<>();
-        for (byte[] enc : allEncodings) {
-            boolean isDuplicate = false;
-            for (byte[] unique : uniqueEncodings) {
-                if (Arrays.equals(enc, unique)) {
-                    isDuplicate = true;
-                    break;
-                }
-            }
-            if (!isDuplicate && enc.length > 0) {
-                uniqueEncodings.add(enc);
-            }
-        }
+        byte[] wordBytes = word.getBytes();
+        int len = wordBytes.length;
 
-        try (RandomAccessFile file = new RandomAccessFile(filename, "r")) {
-        
-            for (byte[] wordBytes : uniqueEncodings) {
-                file.seek(0); 
-                int flag = 0;
-                int c;
-                int len = wordBytes.length;
+        if (len == 0) return 0;
 
-                while ((c = file.read()) != -1) {
-                    if (c == (wordBytes[0] & 0xFF)) {  
-                        flag = 1;
-                        for (int i = 1; i < len; i++) {
-                            c = file.read();
-                            if (c == -1 || c != (wordBytes[i] & 0xFF)) {
-                                flag = 0;
-                                file.seek(file.getFilePointer() - i);  
-                                break;
-                            }
+        try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filename))) {
+            int c;
+            
+            while ((c = bis.read()) != -1) {
+                
+                if (c == (wordBytes[0] & 0xFF)) {  
+                    int flag = 1;
+                    
+                    bis.mark(len);
+
+                    for (int i = 1; i < len; i++) {
+                        c = bis.read();
+                        if (c == -1 || c != (wordBytes[i] & 0xFF)) {
+                            flag = 0;
+                            
+                            bis.reset();  
+                            break;
                         }
-                        
-                        if (flag == 1) {
-                            wordCount++;
-                        }
+                    }
+                    
+                    if (flag == 1) {
+                        wordCount++;
                     }
                 }
             }
@@ -67,6 +47,7 @@ public class Main {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
         String filename = "arquivo_texto_grande.txt";
+        
         try {
             long lenfile = lenFile(filename);
             System.out.println("Tamanho do arquivo: " + lenfile + " bytes");
