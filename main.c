@@ -4,36 +4,63 @@
 #include <string.h>
 
 #define TAMANHO_ALFABETO 256
-#define CHUNK_SIZE (64 * 1024 * 1024) // 64 MB por vez
+#define CHUNK_SIZE (256 * 1024 * 1024)
+#define IO_BUFFER_SIZE (8 * 1024 * 1024)
 
-void monta_tabela_deslocamento(char *palavra, int tamanho_palavra, int *tabela) {
-    for (int i = 0; i < TAMANHO_ALFABETO; i++) {
+#ifdef _WIN32
+#define FSEEK64 _fseeki64
+#define FTELL64 _ftelli64
+#else
+#define FSEEK64 fseeko
+#define FTELL64 ftello
+#endif
+
+static inline void monta_tabela_deslocamento(const unsigned char *palavra, size_t tamanho_palavra, size_t *tabela) {
+    for (size_t i = 0; i < TAMANHO_ALFABETO; i++) {
         tabela[i] = tamanho_palavra;
     }
-    for (int i = 0; i < tamanho_palavra - 1; i++) {
+    for (size_t i = 0; i < tamanho_palavra - 1; i++) {
         tabela[(unsigned char)palavra[i]] = tamanho_palavra - 1 - i;
     }
 }
 
-long long bmh_no_chunk(char *texto, long long tamanho, char *palavra, int tamanho_palavra, int *tabela) {
+static inline long long conta_um_caractere(const unsigned char *texto, size_t tamanho, unsigned char c) {
     long long count = 0;
-    long long i = tamanho_palavra - 1;
+    for (size_t i = 0; i < tamanho; i++) {
+        count += (texto[i] == c);
+    }
+    return count;
+}
+
+static inline long long bmh_no_chunk(const unsigned char *texto, size_t tamanho, const unsigned char *palavra, size_t tamanho_palavra, const size_t *tabela) {
+    if (tamanho_palavra == 1) {
+        return conta_um_caractere(texto, tamanho, palavra[0]);
+    }
+
+    long long count = 0;
+    size_t i = tamanho_palavra - 1;
+    const unsigned char ultimo = palavra[tamanho_palavra - 1];
 
     while (i < tamanho) {
-        int j = tamanho_palavra - 1;
-        long long k = i;
+        const unsigned char c = texto[i];
 
-        while (j >= 0 && texto[k] == palavra[j]) {
-            j--;
-            k--;
+        if (c == ultimo) {
+            size_t j = tamanho_palavra - 1;
+            size_t k = i;
+
+            while (j > 0 && texto[k - 1] == palavra[j - 1]) {
+                j--;
+                k--;
+            }
+
+            if (j == 0) {
+                count++;
+                i += 1;
+                continue;
+            }
         }
 
-        if (j == -1) {
-            count++;
-            i += 1;
-        } else {
-            i += tabela[(unsigned char)texto[i]];
-        }
+        i += tabela[c];
     }
 
     return count;
@@ -42,10 +69,11 @@ long long bmh_no_chunk(char *texto, long long tamanho, char *palavra, int tamanh
 long long pega_tamanho_arquivo(FILE *arquivo) {
     long long tamanho = -1;
 
-    if (fseeko(arquivo, 0, SEEK_END) == 0) {
-        tamanho = ftello(arquivo);
-        fseeko(arquivo, 0, SEEK_SET);
+    if (FSEEK64(arquivo, 0, SEEK_END) == 0) {
+        tamanho = FTELL64(arquivo);
+        FSEEK64(arquivo, 0, SEEK_SET);
     }
+    printf("Tamanho do arquivo: %lld\n", tamanho);
 
     return tamanho;
 }
@@ -60,10 +88,17 @@ void conta_palavras_bmh(char *palavra, char *arq, int tamanho_palavra) {
         return;
     }
 
-    int tabela[TAMANHO_ALFABETO];
-    monta_tabela_deslocamento(palavra, tamanho_palavra, tabela);
+    if (setvbuf(arquivo, NULL, _IOFBF, IO_BUFFER_SIZE) != 0) {
+        printf("Aviso: nao foi possivel ajustar o buffer de IO\n");
+    }
 
-    int sobreposicao = tamanho_palavra - 1;
+    const unsigned char *palavra_u = (const unsigned char *)palavra;
+    size_t m = (size_t)tamanho_palavra;
+
+    size_t tabela[TAMANHO_ALFABETO];
+    monta_tabela_deslocamento(palavra_u, m, tabela);
+
+    size_t sobreposicao = (m > 0) ? (m - 1) : 0;
 
 
     long long tamanho_arquivo = pega_tamanho_arquivo(arquivo);
@@ -72,8 +107,8 @@ void conta_palavras_bmh(char *palavra, char *arq, int tamanho_palavra) {
         chunk_real = tamanho_arquivo; 
     }
 
-    long long tamanho_buffer = chunk_real + sobreposicao;
-    char *buffer = (char *)malloc(tamanho_buffer + 1);
+    size_t tamanho_buffer = (size_t)chunk_real + sobreposicao;
+    unsigned char *buffer = (unsigned char *)malloc(tamanho_buffer + 1);
     if (!buffer) {
         printf("Erro ao alocar memoria\n");
         fclose(arquivo);
@@ -81,20 +116,20 @@ void conta_palavras_bmh(char *palavra, char *arq, int tamanho_palavra) {
     }
 
     long long count = 0;
-    long long bytes_lidos;
-    long long bytes_sobrepostos = 0;
+    size_t bytes_lidos;
+    size_t bytes_sobrepostos = 0;
 
     printf("Palavra que sera procurada: %s\n", palavra);
 
     while (1) {
-        bytes_lidos = fread(buffer + bytes_sobrepostos, 1, chunk_real, arquivo);
+        bytes_lidos = fread(buffer + bytes_sobrepostos, 1, (size_t)chunk_real, arquivo);
 
         if (bytes_lidos == 0) break;
 
-        long long tamanho_valido = bytes_sobrepostos + bytes_lidos;
+        size_t tamanho_valido = bytes_sobrepostos + bytes_lidos;
         buffer[tamanho_valido] = '\0';
 
-        count += bmh_no_chunk(buffer, tamanho_valido, palavra, tamanho_palavra, tabela);
+        count += bmh_no_chunk(buffer, tamanho_valido, palavra_u, m, tabela);
 
         if (tamanho_valido >= sobreposicao) {
             memmove(buffer, buffer + tamanho_valido - sobreposicao, sobreposicao);
