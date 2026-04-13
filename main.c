@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define TAMANHO_ALFABETO 256
-#define CHUNK_SIZE (64 * 1024 * 1024) 
+#define CHUNK_SIZE (64 * 1024 * 1024) // 64 MB por vez
 
 void monta_tabela_deslocamento(char *palavra, int tamanho_palavra, int *tabela) {
     for (int i = 0; i < TAMANHO_ALFABETO; i++) {
@@ -39,8 +39,19 @@ long long bmh_no_chunk(char *texto, long long tamanho, char *palavra, int tamanh
     return count;
 }
 
+long long pega_tamanho_arquivo(FILE *arquivo) {
+    long long tamanho = -1;
+
+    if (fseeko(arquivo, 0, SEEK_END) == 0) {
+        tamanho = ftello(arquivo);
+        fseeko(arquivo, 0, SEEK_SET);
+    }
+
+    return tamanho;
+}
+
 void conta_palavras_bmh(char *palavra, char *arq, int tamanho_palavra) {
-    FILE *arquivo = fopen(arq, "rb"); 
+    FILE *arquivo = fopen(arq, "rb");
 
     if (arquivo != NULL) {
         printf("Arquivo aberto com sucesso\n");
@@ -53,8 +64,15 @@ void conta_palavras_bmh(char *palavra, char *arq, int tamanho_palavra) {
     monta_tabela_deslocamento(palavra, tamanho_palavra, tabela);
 
     int sobreposicao = tamanho_palavra - 1;
-    long long tamanho_buffer = CHUNK_SIZE + sobreposicao;
 
+
+    long long tamanho_arquivo = pega_tamanho_arquivo(arquivo);
+    long long chunk_real = CHUNK_SIZE;
+    if (tamanho_arquivo > 0 && tamanho_arquivo < CHUNK_SIZE) {
+        chunk_real = tamanho_arquivo; 
+    }
+
+    long long tamanho_buffer = chunk_real + sobreposicao;
     char *buffer = (char *)malloc(tamanho_buffer + 1);
     if (!buffer) {
         printf("Erro ao alocar memoria\n");
@@ -64,14 +82,14 @@ void conta_palavras_bmh(char *palavra, char *arq, int tamanho_palavra) {
 
     long long count = 0;
     long long bytes_lidos;
-    long long bytes_sobrepostos = 0; 
+    long long bytes_sobrepostos = 0;
 
     printf("Palavra que sera procurada: %s\n", palavra);
 
     while (1) {
-        bytes_lidos = fread(buffer + bytes_sobrepostos, 1, CHUNK_SIZE, arquivo);
+        bytes_lidos = fread(buffer + bytes_sobrepostos, 1, chunk_real, arquivo);
 
-        if (bytes_lidos == 0) break; 
+        if (bytes_lidos == 0) break;
 
         long long tamanho_valido = bytes_sobrepostos + bytes_lidos;
         buffer[tamanho_valido] = '\0';
@@ -85,7 +103,7 @@ void conta_palavras_bmh(char *palavra, char *arq, int tamanho_palavra) {
             bytes_sobrepostos = tamanho_valido;
         }
 
-        if (bytes_lidos < CHUNK_SIZE) break; 
+        if (bytes_lidos < chunk_real) break;
     }
 
     printf("Total de vezes encontrada: %lld\n", count);
@@ -95,7 +113,7 @@ void conta_palavras_bmh(char *palavra, char *arq, int tamanho_palavra) {
 }
 
 int main() {
-    char palavra[100]; 
+    char palavra[100];
 
     printf("Digite a palavra que quer procurar: \n");
     scanf("%s", palavra);
