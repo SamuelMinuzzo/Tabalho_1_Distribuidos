@@ -2,13 +2,17 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
-#include <fcntl.h>      // Para open()
-#include <sys/mman.h>   // Para mmap() e madvise()
-#include <sys/stat.h>   // Para fstat() e stat()
-#include <unistd.h>     // Para close()
-#ifdef __linux__
+#include <omp.h>
+
+#ifdef _WIN32
+    #include <windows.h>
+#else
+    #include <fcntl.h>
     #include <sys/mman.h>
+    #include <sys/stat.h>
+    #include <unistd.h>
 #endif
+
 
 /*função que retorna o tamanho do arquivo em bytes */
 long int len_file(const char *filename)
@@ -40,7 +44,7 @@ int count_words(const char *filename, char *word)
 
     while ((c = fgetc(file))!= EOF)
     {
-         if (c == (unsigned char)word[0]) {  
+        if (c == (unsigned char)word[0]) {  
             flag = 1;
             for (int i = 1; i < len; i++) {
                 c = fgetc(file);
@@ -50,69 +54,81 @@ int count_words(const char *filename, char *word)
                     break;
                 }
             }
-            if (flag) word_count++;
+            if (flag)
+            {
+                word_count++;
+            }
         }
         
     }
     fclose(file);
     return word_count;
 }
-/*função que conta a ocorrência de uma palavra em um arquivo usando RAM, ou seja, 
-lendo o arquivo inteiro para a memória e depois fazendo a contagem, se o arquivo for muito grande pode causar
-lentidão no SO*/
-int count_words_RAM(const char *filename, char *word)
+
+long long count_words_openMP(const char *filename, const char *word)
 {
-    FILE *file = fopen(filename, "rb");
-    if (file == NULL)
-    {
-        perror("Erro ao abrir o arquivo");
-        return -1;
-    }
-    
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    rewind(file); 
+    long length = len_file(filename);
+    size_t word_len = strlen(word);
 
-    char *buffer = (char *)malloc(length);
-    if (buffer == NULL)
+    if (word_len == 0 || length < (long)word_len)
     {
-        perror("Erro ao alocar memória para o arquivo");
-        printf("Será necessario executar a versão de contagem sem RAM\n");
-        return count_words(filename, word);
-        fclose(file);
+        return 0;
     }
 
-    fread(buffer, 1, length, file);
-    fclose(file); 
+    int num_threads = omp_get_max_threads();
+    long chunk_size = length / num_threads;
+    long long total_count = 0;
 
-    int word_count = 0;
-    int len = strlen(word);
-
-    for (long i = 0; i < length; i++)
+    #pragma omp parallel for reduction(+:total_count) schedule(static)
+    for (int t = 0; t < num_threads; t++)
     {
-        if (buffer[i] == word[0])
+        FILE *file = fopen(filename, "rb");
+        if(file == NULL)
         {
-            int flag = 1;
+            perror("Erro ao abrir o arquivo");
+            return -1;
+        }
 
-            for (int j = 1; j < len; j++)
+        long start = t * chunk_size;
+        long end = (t == num_threads - 1) ? length : (t + 1) * chunk_size;
+        long search_end = end + word_len - 1;
+        if (search_end > length)
+            search_end = length;
+
+        fseek(file, start, SEEK_SET);
+
+        long pos = start;
+        int c;
+
+        while (pos <= search_end - word_len &&
+               (c = fgetc(file)) != EOF)
+        {
+            if (c == (unsigned char)word[0])
             {
-                if (i + j >= length || buffer[i + j] != word[j])
+                int flag = 1;
+                for (size_t i = 1; i < word_len; i++)
                 {
-                    flag = 0;
-                    break;
+                    c = fgetc(file);
+                    if (c == EOF || c != (unsigned char)word[i])
+                    {
+                        flag = 0;
+                        fseek(file, -(long)i, SEEK_CUR);
+                        break;
+                    }
+                }
+
+                if (flag)
+                {
+                    total_count++;
                 }
             }
-    
-            if (flag == 1)
-            {
-                word_count++;
-            }
+            pos++;
         }
+        fclose(file);
     }
-
-    free(buffer); 
-    return word_count;
+    return total_count;
 }
+
 /* * FUNÇÃO: count_words_mmap
  * ------------------------
  * Realiza a contagem de ocorrências de uma palavra utilizando Mapeamento de Memória (mmap).
@@ -153,69 +169,157 @@ int count_words_RAM(const char *filename, char *word)
  */
 long long count_words_mmap(const char *filename, char *word)
 {
-    /* a função open retorna um indice inteiro na tabela do kernel */
-    int fd = open(filename, O_RDONLY);     if (fd == -1) { //*a diretiva O_RDONLY indica que o arquivo será aberto apenas para leitura
-        perror("Erro ao abrir o arquivo");
-        return -1;
-    }
+    #ifdef _WIN32
+        printf("[Windows] mmap indisponível -> usando fallback sequencial.\n");
+        return count_words(filename, word);
 
-    // Obtendo o tamanho do arquivo usando fstat, que é mais eficiente do que abrir o arquivo e usar fseek/ftell
-    struct stat st;
-    fstat(fd, &st);
-    long  length = st.st_size;
-    size_t word_len = strlen(word);
-
-    if (word_len == 0) {
-        close(fd);
-        return 0;
-    }
-
-    /* Mapeando o arquivo na memória, a função mmap retorna um ponteiro para o início do mapeamento,
-     ou MAP_FAILED em caso de erro, os paramentros são:
-     NULL: o sistema escolhe o endereço de mapeamento
-     length: tamanho do mapeamento
-     PROT_READ: permissão de leitura
-     MAP_PRIVATE: mapeamento privado
-     fd: descriptor do arquivo
-     0: deslocamento no arquivo */
-    char *data = mmap(NULL, length, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (data == MAP_FAILED) {
-        perror("Erro no mmap. Tentando versão clássica...");
-        close(fd);
-        return count_words(filename, (char *)word); 
-    }
-
-    #ifdef __unix__ 
-        madvise(data, length, MADV_SEQUENTIAL);
-    #elif defined(_WIN32)
-    #endif
-
-    long long word_count = 0;
-    char *p = data;
-    char *end = data + length;
-
-    // Lógica de busca otimizada usando memchr e memcmp
-    while (p <= end - word_len) {
-        // memchr é extremamente rápido (usa instruções SIMD do processador)
-        /* a funcao memchr procura a primeira ocorrência do primeiro caractere da palavra (word[0]) no buffer,
-         começando do ponteiro p e limitando a busca até end - word_len + 1 para garantir que haja espaço suficiente 
-         para comparar a palavra completa. Se memchr encontrar o caractere, ele retorna um ponteiro para essa posição; caso contrário, retorna NULL. Isso é muito eficiente porque pode usar otimizações de hardware para acelerar a busca.
-        */
-        p = memchr(p, word[0], end - p - word_len + 1);
-        
-        if (!p) break;
-
-        // Compara o restante da palavra
-        if (memcmp(p + 1, word + 1, word_len - 1) == 0) {
-            word_count++;
+    #else
+        /* a função open retorna um indice inteiro na tabela do kernel */
+        int fd = open(filename, O_RDONLY);     if (fd == -1) { //*a diretiva O_RDONLY indica que o arquivo será aberto apenas para leitura
+            perror("Erro ao abrir o arquivo");
+            return -1;
         }
-        p++; // Incrementa para permitir sobreposição
-    }
 
-    munmap(data, length);
-    close(fd);
-    return word_count;
+        // Obtendo o tamanho do arquivo usando fstat, que é mais eficiente do que abrir o arquivo e usar fseek/ftell
+        struct stat st;
+        fstat(fd, &st);
+        long  length = st.st_size;
+        size_t word_len = strlen(word);
+
+        if (word_len == 0) {
+            close(fd);
+            return 0;
+        }
+
+        /* Mapeando o arquivo na memória, a função mmap retorna um ponteiro para o início do mapeamento,
+        ou MAP_FAILED em caso de erro, os paramentros são:
+        NULL: o sistema escolhe o endereço de mapeamento
+        length: tamanho do mapeamento
+        PROT_READ: permissão de leitura
+        MAP_PRIVATE: mapeamento privado
+        fd: descriptor do arquivo
+        0: deslocamento no arquivo */
+        char *data = mmap(NULL, length, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (data == MAP_FAILED) {
+            perror("Erro no mmap. Tentando versão clássica...");
+            close(fd);
+            return count_words(filename, (char *)word); 
+        }
+
+        #ifdef __unix__ 
+            madvise(data, length, MADV_SEQUENTIAL);
+        #elif defined(_WIN32)
+        #endif
+
+        long long word_count = 0;
+        char *p = data;
+        char *end = data + length;
+
+        // Lógica de busca otimizada usando memchr e memcmp
+        while (p <= end - word_len) {
+            // memchr é extremamente rápido (usa instruções SIMD do processador)
+            /* a funcao memchr procura a primeira ocorrência do primeiro caractere da palavra (word[0]) no buffer,
+            começando do ponteiro p e limitando a busca até end - word_len + 1 para garantir que haja espaço suficiente 
+            para comparar a palavra completa. Se memchr encontrar o caractere, ele retorna um ponteiro para essa posição; caso contrário, retorna NULL. Isso é muito eficiente porque pode usar otimizações de hardware para acelerar a busca.
+            */
+            p = memchr(p, word[0], end - p - word_len + 1);
+            
+            if (!p) break;
+
+            // Compara o restante da palavra
+            if (memcmp(p + 1, word + 1, word_len - 1) == 0) {
+                word_count++;
+            }
+            p++; // Incrementa para permitir sobreposição
+        }
+
+        munmap(data, length);
+        close(fd);
+        return word_count;
+    #endif
 }
+
+
+long long count_words_mmap_openMP(const char *filename, char *word)
+{
+    #ifdef _WIN32
+        printf("[Windows] mmap indisponível -> usando fallback sequencial.\n");
+        return count_words_openMP(filename, word);
+    #else
+        int fd = open(filename, O_RDONLY);
+        if (fd == -1) {
+            perror("Erro ao abrir o arquivo");
+            return -1;
+        }
+
+        struct stat st;
+        fstat(fd, &st);
+        long length = st.st_size;
+        size_t word_len = strlen(word);
+
+        if (word_len == 0 || length < (long)word_len) {
+            close(fd);
+            return 0;
+        }
+
+        char *data = mmap(NULL, length, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (data == MAP_FAILED) {
+            perror("Erro no mmap. Tentando versão clássica...");
+            close(fd);
+            return count_words(filename, word); 
+        }
+
+        #ifdef __unix__ 
+            madvise(data, length, MADV_SEQUENTIAL);
+            madvise(data, length, MADV_WILLNEED);
+        #endif
+        /*Calcula o número de threads e o tamanho de cada chunk*/
+        int num_threads = omp_get_max_threads(); // retorna o número máximo de threads disponíveis para o programa, que geralmente é igual ao número de núcleos da CPU
+        long long chunk_size = length / num_threads; // divide o arquivo em partes iguais para cada thread processar
+        long long total_word_count = 0; 
+        /* variável compartilhada para acumular o total de ocorrências, a diretiva reduction(+:total_word_count) 
+        garante que cada thread tenha sua própria cópia local da variável e que os resultados sejam somados 
+        corretamente no final da execução*/
+        
+
+        // PARALELIZAÇÃO DO PROCESSAMENTO
+        #pragma omp parallel for reduction(+:total_word_count) schedule(static)
+        for (int i = 0; i < num_threads; i++) {
+            // int i = omp_get_thread_num(); // retorna o ID da thread atual, que varia de 0 a num_threads-1
+            long long start = i * chunk_size; // calcula o início do chunk para a thread atual
+            
+            // A última thread vai até o fim real do arquivo
+            long long end = (i == num_threads - 1) ? length : (i + 1) * chunk_size;
+            
+            // RESOLUÇÃO DO CORTE: 
+            // Cada thread olha um pouco além do seu limite (word_len - 1)
+            // para capturar palavras que "atravessam" a fronteira dos blocos.
+            long long search_limit = (i == num_threads - 1) ? end : end + (word_len - 1);
+            
+            // Garante que não ultrapassamos o tamanho total do arquivo
+            if (search_limit > length) search_limit = length;
+
+            char *p = data + start;
+            char *ptr_end = data + search_limit;
+
+            while (p <= ptr_end - word_len) {
+                p = memchr(p, word[0], ptr_end - p - word_len + 1);
+                if (!p) break;
+
+                if (memcmp(p + 1, word + 1, word_len - 1) == 0) {
+                    total_word_count++;
+                }
+                p++; 
+            }
+        }
+
+        munmap(data, length);
+        close(fd);
+        return total_word_count;
+    #endif
+}
+
+
 int main()
 {
     long long word_count = 0;
@@ -237,21 +341,35 @@ int main()
     }
 
     long length = 0;
+    double time = 0;
+    double start, end;
     // lembrar de mudar o nome desses arquivos para a apresentação
     const char *filename = "arquivo10GB.txt";
     length = len_file(filename);
-   
-    clock_t start = clock();
-    word_count = count_words_mmap(filename, word);
-    clock_t end = clock();
-    double time = ((double)(end - start)) / CLOCKS_PER_SEC;
-
-    printf("\n*************************************\n");
-    printf("Tamanho do arquivo: %ld bytes\n", length);
-    printf("Palavra a ser contada: %s\n", word);
-    printf("Tempo de execução: %f segundos\n", time);
-    printf("Número de ocorrências: %lld\n", word_count);
-    printf("*************************************\n");
+    printf("threads disponíveis: %d\n", omp_get_max_threads());
+    for(int i=1; i<=2; i++){
+        if(i == 1){
+            start = omp_get_wtime();
+            word_count = count_words_mmap(filename, word);
+            end = omp_get_wtime();
+           
+        }else{
+            start = omp_get_wtime();
+            word_count = count_words_mmap_openMP(filename, word);
+            end = omp_get_wtime();
+        
+        }
+        time = ((double)(end - start));
+        printf("\n*************************************\n");
+        printf("Versão: 1-sequencial, 2-paralela\n");
+        printf("Versão escolhida: %d\n", i);
+        printf("Tamanho do arquivo: %ld bytes\n", length);
+        printf("Palavra a ser contada: %s\n", word);
+        printf("Tempo de execução: %f segundos\n", time);
+        printf("Número de ocorrências: %lld\n", word_count);
+        printf("*************************************\n");
+       
+    }
 
     free(word);
     return 0;
