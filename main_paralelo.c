@@ -2,10 +2,11 @@
  * @file main.c
  * @brief Contador de ocorrências em arquivo gigante usando BMH e otimizações de baixo nível.
  *
- * O programa foi escrito para maximizar throughput sem paralelismo. Ele usa leitura em chunks,
- * tabela de deslocamento do Boyer-Moore-Horspool, alinhamento de cache line e prefetching.
+ * O programa foi escrito para maximizar throughput com paralelismo em CPU via OpenMP.
+ * Ele usa leitura em chunks, tabela de deslocamento Boyer-Moore-Horspool,
+ * alinhamento de cache line e prefetching.
  * 
- * gcc -O3 -march=native -flto main.c -o main.exe
+ * gcc -O3 -march=native -flto -fopenmp main_paralelo.c -o main_paralelo
  */
 
 #include <stdio.h>   /**< Entrada e saída padrão. */
@@ -13,7 +14,8 @@
 #include <time.h>    /**< Medição de tempo com clock(). */
 #include <string.h>  /**< strlen(), memcpy() e operações de memória. */
 #include <stdint.h>  /**< uintptr_t para alinhamento de ponteiros. */
-#include <ctype.h>   /**< isalpha para detectar corte no meio de palavra. */
+#include <ctype.h>   /**< isalpha para ajuste de fronteira de palavra. */
+#include <omp.h>     /**< API OpenMP para paralelismo em CPU. */
 
 /** Tamanho do alfabeto em bytes. */
 #define TAMANHO_ALFABETO 256
@@ -23,6 +25,8 @@
 #define IO_BUFFER_SIZE (24 * 1024 * 1024)
 /** Distância do prefetch em bytes. */
 #define PREFETCH_DISTANCE 512
+/** Tamanho mínimo do buffer para compensar custo de paralelização. */
+#define MIN_PARALLEL_BYTES (4 * 1024 * 1024)
 
 #ifdef _WIN32
 /** Leitura e posicionamento de arquivo em 64 bits no Windows. */
@@ -158,6 +162,71 @@ static inline long long bmh_com_prefetch(const unsigned char * __restrict__ text
     return count;
 }
 
+/**
+ * @brief Versão paralela do BMH, dividindo o espaço de busca por faixas de índice.
+ *
+ * Cada thread processa uma faixa independente do índice "i" (posição do último byte
+ * da janela). Isso evita condições de corrida e garante que cada ocorrência seja
+ * contabilizada uma única vez.
+ */
+static inline long long bmh_com_prefetch_paralelo(const unsigned char * __restrict__ texto,
+                                                  long long tamanho,
+                                                  const unsigned char * __restrict__ palavra,
+                                                  size_t tamanho_palavra,
+                                                  const size_t * __restrict__ tabela) {
+    if (tamanho_palavra <= 1 || tamanho < (long long)tamanho_palavra || tamanho < MIN_PARALLEL_BYTES) {
+        return bmh_com_prefetch(texto, tamanho, palavra, tamanho_palavra, tabela);
+    }
+
+    int num_threads = omp_get_max_threads();
+    if (num_threads < 1) {
+        num_threads = 1;
+    }
+
+    long long *divisoes = (long long *)malloc((size_t)(num_threads + 1) * sizeof(long long));
+    if (divisoes == NULL) {
+        return bmh_com_prefetch(texto, tamanho, palavra, tamanho_palavra, tabela);
+    }
+
+    divisoes[0] = 0;
+    divisoes[num_threads] = tamanho;
+
+    for (int t = 1; t < num_threads; t++) {
+        long long corte = (tamanho * t) / num_threads;
+
+        if (corte < tamanho && isalpha((unsigned char)texto[corte])) {
+            while (corte < tamanho && texto[corte] != ' ') {
+                corte++;
+            }
+            if (corte < tamanho) {
+                corte++;
+            }
+        }
+
+        if (corte < divisoes[t - 1]) {
+            corte = divisoes[t - 1];
+        }
+
+        divisoes[t] = corte;
+    }
+
+    long long count = 0;
+
+#pragma omp parallel for reduction(+:count) schedule(static)
+    for (int t = 0; t < num_threads; t++) {
+        long long ini = divisoes[t];
+        long long fim = divisoes[t + 1];
+        long long tam_local = fim - ini;
+
+        if (tam_local > 0) {
+            count += bmh_com_prefetch(texto + ini, tam_local, palavra, tamanho_palavra, tabela);
+        }
+    }
+
+    free(divisoes);
+    return count;
+}
+
 long long pega_tamanho_arquivo(FILE *arquivo) {
     long long tamanho = -1;
 
@@ -225,14 +294,12 @@ long long conta_palavras_bmh(const char *arq, const unsigned char *palavra, int 
     long long count = 0;
     size_t bytes_lidos;
     size_t bytes_sobrepostos = 0;
-    size_t capacidade_util = (size_t)chunk_real + sobreposicao;
 
     printf("Arquivo: %s\n", arq);
     printf("Palavra que sera procurada: %s\n", (const char *)palavra);
 
     while (1) {
-        size_t bytes_para_ler = capacidade_util - bytes_sobrepostos;
-        bytes_lidos = fread(buffer + bytes_sobrepostos, 1, bytes_para_ler, arquivo);
+        bytes_lidos = fread(buffer + bytes_sobrepostos, 1, (size_t)chunk_real, arquivo);
 
         if (bytes_lidos == 0) {
             if (ferror(arquivo)) {
@@ -245,50 +312,17 @@ long long conta_palavras_bmh(const char *arq, const unsigned char *palavra, int 
         }
 
         long long tamanho_valido = bytes_sobrepostos + bytes_lidos;
-        long long tamanho_processar = tamanho_valido;
 
-        if (!feof(arquivo) && tamanho_valido > 0) {
-            long long corte = tamanho_valido;
+        count += bmh_com_prefetch_paralelo(buffer, tamanho_valido, palavra, m, tabela);
 
-            if (isalpha((unsigned char)buffer[corte - 1])) {
-                while (corte > (long long)bytes_sobrepostos && buffer[corte - 1] != ' ') {
-                    corte--;
-                }
-
-                /* Se encontrou espaco na parte nova, processa ate ele e deixa resto para o proximo ciclo. */
-                if (corte > (long long)bytes_sobrepostos) {
-                    tamanho_processar = corte;
-                }
+        if (tamanho_valido >= sobreposicao) {
+            /* Copia somente a sobreposição para o início do buffer. */
+            if (sobreposicao > 0) {
+                memcpy(buffer, buffer + tamanho_valido - sobreposicao, sobreposicao);
             }
-        }
-
-        count += bmh_com_prefetch(buffer, tamanho_processar, palavra, m, tabela);
-
-        long long inicio_carry = (tamanho_processar >= (long long)sobreposicao)
-                                 ? (tamanho_processar - (long long)sobreposicao)
-                                 : 0;
-        bytes_sobrepostos = (size_t)(tamanho_valido - inicio_carry);
-
-        if (bytes_sobrepostos > 0) {
-            memmove(buffer, buffer + inicio_carry, bytes_sobrepostos);
-        }
-
-        if (bytes_sobrepostos > capacidade_util) {
-            fprintf(stderr, "Erro interno: carry excedeu o limite do buffer\n");
-            free(buffer_base);
-            fclose(arquivo);
-            return -1;
-        }
-
-        if (bytes_sobrepostos == capacidade_util) {
-            /* Evita estagnar se uma palavra muito longa preencher todo o buffer. */
-            count += bmh_com_prefetch(buffer, (long long)bytes_sobrepostos, palavra, m, tabela);
-            if (sobreposicao > 0 && bytes_sobrepostos > sobreposicao) {
-                memmove(buffer, buffer + bytes_sobrepostos - sobreposicao, sobreposicao);
-                bytes_sobrepostos = sobreposicao;
-            } else if (sobreposicao == 0) {
-                bytes_sobrepostos = 0;
-            }
+            bytes_sobrepostos = sobreposicao;
+        } else {
+            bytes_sobrepostos = tamanho_valido;
         }
 
     }
