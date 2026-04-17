@@ -1,38 +1,51 @@
-import sys
 import os
+import sys
 
-if len(sys.argv) != 3:
-    print("Uso: python copiar_ate_2gb.py <arquivo_origem> <arquivo_saida>")
-    sys.exit(1)
+def criar_arquivo_escalonado(origem, prefixo_saida, tamanhos_gb):
+    """
+    origem: arquivo pequeno base (ex: texto de 1MB)
+    prefixo_saida: pasta ou prefixo para os arquivos
+    tamanhos_gb: lista de tamanhos em GB
+    """
+    if not os.path.exists(origem):
+        print(f"Erro: Arquivo base '{origem}' não encontrado.")
+        return
 
-origem = sys.argv[1]
-saida = sys.argv[2]
-tamanho_desejado = 2147483648  # 2GB em bytes
+    # Lê o conteúdo base uma vez para a memória para ser ultra rápido
+    with open(origem, 'rb') as f:
+        conteudo_base = f.read()
+    
+    if not conteudo_base:
+        print("Erro: Arquivo base está vazio.")
+        return
 
-if not os.path.exists(origem):
-    print(f"Arquivo {origem} não encontrado!")
-    sys.exit(1)
-
-tamanho_origem = os.path.getsize(origem)
-if tamanho_origem == 0:
-    print("Arquivo origem está vazio!")
-    sys.exit(1)
-
-with open(origem, 'rb') as f_origem, open(saida, 'wb') as f_saida:
-    while os.path.getsize(saida) < tamanho_desejado:
-        f_origem.seek(0)  # Volta ao início
-        chunk_size = 1024 * 1024  # 1MB por chunk
-        bytes_restantes = tamanho_desejado - os.path.getsize(saida)
-        if bytes_restantes < chunk_size:
-            chunk_size = bytes_restantes
+    for gb in tamanhos_gb:
+        nome_arquivo = f"arquivo{gb}GB.txt"
+        tamanho_alvo = int(gb * 1024 * 1024 * 1024)
         
-        while os.path.getsize(saida) < tamanho_desejado:
-            chunk = f_origem.read(chunk_size)
-            if not chunk:
-                break  # Fim do arquivo origem
-            escreve = min(len(chunk), tamanho_desejado - os.path.getsize(saida))
-            f_saida.write(chunk[:escreve])
-            if os.path.getsize(saida) >= tamanho_desejado:
-                break
+        print(f"Gerando {nome_arquivo} ({gb} GB)...", end="\r")
+        
+        bytes_escritos = 0
+        with open(nome_arquivo, 'wb') as f_out:
+            # Escreve em blocos grandes para performance de escrita
+            while bytes_escritos < tamanho_alvo:
+                restante = tamanho_alvo - bytes_escritos
+                chunk = conteudo_base[:restante] if len(conteudo_base) > restante else conteudo_base
+                f_out.write(chunk)
+                bytes_escritos += len(chunk)
+        
+        print(f"Gerado: {nome_arquivo} [OK]          ")
 
-print(f"Arquivo {saida} criado com {os.path.getsize(saida)} bytes.")
+if __name__ == "__main__":
+    # Lista sugerida para uma apresentação impactante:
+    # 0.1 (100MB) e 0.5 (500MB) servem para mostrar o overhead das threads
+    # 1 a 15 mostram a escalabilidade e o limite do SSD
+    lista_tamanhos = [0.1, 0.5, 1, 2, 4, 6, 8, 10, 15]
+    
+    arquivo_base = "arquivo_texto_medio.txt" # Crie um arquivo txt pequeno com algumas frases
+    if not os.path.exists(arquivo_base):
+        with open(arquivo_base, "w") as f:
+            f.write("exemplo de conteudo para busca paralela " * 100)
+
+    criar_arquivo_escalonado(arquivo_base, "arquivo", lista_tamanhos)
+    print("\nTodos os arquivos de teste foram criados!")
