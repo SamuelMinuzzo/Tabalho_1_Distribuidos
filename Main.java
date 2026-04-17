@@ -1,11 +1,13 @@
-import java.io.File;
+// javac Main.java
+// java Main arquivoXGB.txt "palavra" n_threadsimport java.io.File;
+
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Locale;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Semaphore;
-import java.util.Locale;
 
 public class Main {
 
