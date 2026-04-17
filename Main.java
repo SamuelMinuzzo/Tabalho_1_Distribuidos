@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Semaphore;
+import java.util.Locale;
 
 public class Main {
 
@@ -13,6 +14,7 @@ public class Main {
     // Definindo 16MB para os buffers
     private static final int TAMANHO_BUFFER = 16 * 1024 * 1024; 
     public static void main(String[] args) {
+        Locale.setDefault(Locale.US);
         if (args.length < 3) {
             System.err.printf("Uso: java Main <arquivo> <palavra> <num_threads>\n");
             System.exit(-1);
@@ -95,7 +97,7 @@ public class Main {
         Thread[] threads = new Thread[numThreads];
 
         CyclicBarrier barreira = new CyclicBarrier(numThreads, () -> {
-            System.out.println("Fase de processamento concluída por todas as threads.");
+            //System.out.println("Fase de processamento concluída por todas as threads.");
         });
 
         long tamanhoArquivo;
