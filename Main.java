@@ -1,85 +1,199 @@
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Scanner;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Semaphore;
 
-// utilizando RandomAccessFile
 public class Main {
-    public static void main(String[] args) throws IOException {
 
-        String file = "arquivo10GB.txt";
-        String word; // palavra a ser contada
-        Scanner scanner = new Scanner(System.in);
-        System.out.print("Digite a palavra: ");
-        word = scanner.next();
-        if (word.length() > 100) {
-            word = word.substring(0, 100);
+    private static long totalOcorrencias = 0;
+    private static Semaphore semaforoDisco;
+    // Definindo 16MB para os buffers
+    private static final int TAMANHO_BUFFER = 16 * 1024 * 1024; 
+    public static void main(String[] args) {
+        if (args.length < 3) {
+            System.err.printf("Uso: java Main <arquivo> <palavra> <num_threads>\n");
+            System.exit(-1);
         }
-        try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
-            // o FileChannel é utilizado para obter o tamanho do arquivo 
-            FileChannel channel = raf.getChannel();
-            long fileSize = channel.size(); 
-            System.out.println("Tamanho do arquivo: " + fileSize + " bytes");
 
-            // dividindo o arquivo em partes, como o maximo dos inteiros é 2^31-1, utilizei  1GB
-            long partSize = 1024L * 1024L * 1024L;
-            long numParts = (fileSize + partSize - 1) / partSize;
-            long count = 0;
-            boolean flag = false; // flag para indicar se a palavra foi encontrada
-            int index = 0;
-            //System.out.println("numero de partes: " + numParts);
-            long startTime = System.nanoTime();
-            // a contagem é feita sequencial, até encontrar o primeiro caracter da palavra, depois disso ele liga a flag e verifica toda a palavra se no final da word a flag for 1 então tem uma palavra , depois continua de onde parou
-            // como ja foi lido o arquivo em partes, a contagem é feita em cada parte, e depois somada no final, lembrar de 
-            // se a palavra for encontrada no final da parte, a contagem continua na próxima parte, para isso é necessário guardar o estado da flag e o indice da palavra que foi encontrada
-            for (int i = 0; i < numParts; i++) {
-                //System.out.println("lendo parte " + (i + 1) + " de " + numParts);
-                long start = i * partSize;
-                // o size da parte é o minimo entre o tamanho da parte e o tamanho do arquivo menos o inicio da parte,
-                // para evitar ler além do final do arquivo
-                if (partSize > fileSize) {
-                    partSize = fileSize;
-                }else if (start + partSize > fileSize) {
-                    partSize = fileSize - start;
-                }
-                // posiciona o ponteiro do arquivo no inicio da parte 
-                raf.seek(start);
-                // copia a parte do arquivo para um buffer, para isso é necessário criar um array de bytes 
-                //com o tamanho da parte, e ler o arquivo para esse buffer
-                byte[] buffer = new byte[(int) partSize];
-                raf.read(buffer);
-                for (int j = 0; j < buffer.length; j++) {
-                    // word.charAt(index) & 0xFF é utilizado para comparar o byte do buffer com o caracter da palavra,
-                    // pois o buffer é um array de bytes e a palavra é uma string, 
-                    //então é necessário converter o caracter da palavra para byte,
-                    // utilizando a operação AND com 0xFF para garantir que o valor seja positivo e
-                    // compatível com o byte do buffer
-                    if (buffer[j] == (word.charAt(index) & 0xFF))
-                    {
-                        if (!flag) {
-                            flag = true; 
-                        }
-                        index++; // incrementa o indice da palavra
-                        if (index == word.length()) {
-                            count++; // palavra completa encontrada, incrementa a contagem
-                            flag = false; // reseta a flag
-                            index = 0; // reseta o indice
+        String filename = args[0];
+        String word = args[1];
+        int threads_para_teste = Integer.parseInt(args[2]);
+
+        File file = new File(filename);
+        if (!file.exists()) {
+            System.err.println("Erro ao abrir arquivo.");
+            System.exit(-1);
+        }
+        long length = file.length();
+
+        try {
+            long s_start_nano = System.nanoTime();
+            long s_count = countWordsSequential(filename, word);
+            long s_end_nano = System.nanoTime();
+            double s_time = (s_end_nano - s_start_nano) / 1e9; // Converte para segundos (double)
+
+            
+            long p_start_nano = System.nanoTime();
+            long p_count = countWordsParallel(filename, word, threads_para_teste);
+            long p_end_nano = System.nanoTime();
+            double p_time = (p_end_nano - p_start_nano) / 1e9;
+
+            if (s_count != p_count) {
+                System.err.printf("Contagem sequencial (%d) e paralela (%d) não coincidem!\n", s_count, p_count);
+            }
+
+            System.out.printf("%s,%s,%d,%d,%d,%.6f,%.6f,%d\n", 
+                    filename, word, word.length(), threads_para_teste, 
+                    length, s_time, p_time, p_count);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(-1);
+        }
+    }
+
+    // medoto para incrementar o total de ocorrencias de forma thread-safe(ou seja, sem risco de condições de corrida)
+    private static synchronized void incrementarTotal(long parcial) {
+        totalOcorrencias += parcial;
+    }
+
+    public static long countWordsSequential(String arquivo, String palavra) throws IOException {
+        long contador = 0;
+        int index = 0;
+        ByteBuffer buffer = ByteBuffer.allocateDirect(TAMANHO_BUFFER);
+
+        try (RandomAccessFile raf = new RandomAccessFile(arquivo, "r");
+             FileChannel canal = raf.getChannel()) {
+
+            while (canal.read(buffer) != -1) {
+                buffer.flip();
+                while (buffer.hasRemaining()) {
+                    byte b = buffer.get();
+                    if (b == (palavra.charAt(index) & 0xFF)) {
+                        index++;
+                        if (index == palavra.length()) {
+                            contador++;
+                            index = 0;
                         }
                     } else {
-                        flag = false; // caracter diferente, reseta a flag
-                        index = 0; // reseta o indice
+                        index = 0;
+                        if (b == (palavra.charAt(0) & 0xFF)) index = 1;
                     }
                 }
+                buffer.clear();
             }
-            long endTime = System.nanoTime();
-            double time = (endTime - startTime) / 1000000000.0; 
-            System.out.println("\n*************************************");
-            System.out.println("Tamanho do arquivo: " + fileSize + " bytes");
-            System.out.printf("Palavra a ser contada: '%s'%n", word);
-            System.out.printf("Tempo de execução: %.6f s%n", time);
-            System.out.println("Número de ocorrências: " + count);
-            System.out.println("*************************************");
         }
-        Exception e = new Exception("Erro ao ler o arquivo");
-        System.out.println(e.getMessage());    
+        return contador;
+    }
+
+    public static long countWordsParallel(String arquivo, String palavra, int numThreads) throws IOException, InterruptedException {
+        totalOcorrencias = 0;
+        semaforoDisco = new Semaphore(numThreads);
+        Thread[] threads = new Thread[numThreads];
+
+        CyclicBarrier barreira = new CyclicBarrier(numThreads, () -> {
+            System.out.println("Fase de processamento concluída por todas as threads.");
+        });
+
+        long tamanhoArquivo;
+        try (RandomAccessFile raf = new RandomAccessFile(arquivo, "r")) {
+            tamanhoArquivo = raf.length();
+        }
+
+        long tamanhoParte = tamanhoArquivo / numThreads;
+
+        for (int i = 0; i < numThreads; i++) {
+            long inicio = i * tamanhoParte;
+            long fim;
+
+            if (i == numThreads - 1) {
+                fim = tamanhoArquivo;
+            } else {
+                // Sobreposição para não cortar palavras entre as threads
+                fim = (i + 1) * tamanhoParte + (palavra.length() - 1);
+                if (fim > tamanhoArquivo) fim = tamanhoArquivo;
+            }
+
+            threads[i] = new Thread(new WordCountTask(arquivo, palavra, inicio, fim, barreira));
+            threads[i].start();
+        }
+
+        for (Thread t : threads) {
+            t.join();
+        }
+
+        return totalOcorrencias;
+    }
+
+    static class WordCountTask implements Runnable {
+        private String arquivo, palavra;
+        private long inicio, fim;
+        private CyclicBarrier barreira;
+
+        public WordCountTask(String arquivo, String palavra, long inicio, long fim, CyclicBarrier barreira) {
+            this.arquivo = arquivo;
+            this.palavra = palavra;
+            this.inicio = inicio;
+            this.fim = fim;
+            this.barreira = barreira;
+        }
+
+        @Override
+        public void run() {
+            long contadorLocal = 0;
+            int index = 0;
+            // Cada thread terá seu próprio buffer de 16MB 
+            ByteBuffer buffer = ByteBuffer.allocateDirect(TAMANHO_BUFFER);
+
+            try {
+                semaforoDisco.acquire();
+                try (RandomAccessFile raf = new RandomAccessFile(arquivo, "r");
+                     FileChannel canal = raf.getChannel()) {
+
+                    canal.position(inicio);
+                    long limiteParaLer = fim - inicio;
+                    long totalLidoDestaThread = 0;
+
+                    while (totalLidoDestaThread < limiteParaLer) {
+                        buffer.clear();
+                        
+                        // Garante que não leremos além do fim do bloco desta thread
+                        if (limiteParaLer - totalLidoDestaThread < buffer.capacity()) {
+                            buffer.limit((int) (limiteParaLer - totalLidoDestaThread));
+                        }
+
+                        int lidos = canal.read(buffer);
+                        if (lidos == -1) break;
+
+                        buffer.flip();
+                        while (buffer.hasRemaining()) {
+                            byte b = buffer.get();
+                            if (b == (palavra.charAt(index) & 0xFF)) {
+                                index++;
+                                if (index == palavra.length()) {
+                                    contadorLocal++;
+                                    index = 0;
+                                }
+                            } else {
+                                index = 0;
+                                if (b == (palavra.charAt(0) & 0xFF)) index = 1;
+                            }
+                        }
+                        totalLidoDestaThread += lidos;
+                    }
+                } finally {
+                    semaforoDisco.release();
+                }
+
+                barreira.await();
+                incrementarTotal(contadorLocal);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
