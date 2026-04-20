@@ -276,12 +276,12 @@ static inline long long bmh_paralelo_buffer(
     const unsigned char * __restrict__ palavra,
     size_t tamanho_palavra,
     const size_t * __restrict__ tabela,
-    int num_threads
+    int num_threads,
+    size_t salto_match
 ) {
     if (tamanho_palavra == 0 || tamanho <= 0) {
         return 0;
     }
-    size_t salto_match = calcula_salto_pos_match(palavra, tamanho_palavra);
     if (tamanho_palavra == 1) {
         long long total = 0;
     
@@ -500,6 +500,7 @@ long long conta_substrings_arquivo_bmh_paralelo(
 
     size_t tabela[TAMANHO_ALFABETO];
     monta_tabela_deslocamento(palavra, m, tabela);
+    size_t salto_match = calcula_salto_pos_match(palavra, m);
 
     long long tamanho_arquivo = pega_tamanho_arquivo(arquivo);
     if (tamanho_arquivo < 0) {
@@ -515,56 +516,63 @@ long long conta_substrings_arquivo_bmh_paralelo(
 
     size_t capacidade_util = (size_t)chunk_real + sobreposicao;
 
-    unsigned char *buffer_base = NULL;
-    unsigned char *buffer = aloca_buffer_alinhado(capacidade_util, &buffer_base);
-    if (!buffer) {
+    unsigned char *base[2]   = { NULL, NULL };
+    unsigned char *buf[2];
+
+    buf[0] = aloca_buffer_alinhado(capacidade_util, &base[0]);
+    buf[1] = aloca_buffer_alinhado(capacidade_util, &base[1]);
+
+    if (!buf[0] || !buf[1]) {
         fprintf(stderr, "Erro ao alocar memoria\n");
+        free(base[0]); free(base[1]);
         fclose(arquivo);
         return -1;
     }
 
     long long total = 0;
+    int atual = 0;
     size_t bytes_sobrepostos = 0;
 
-    while (1) {
-        size_t bytes_para_ler = (size_t)chunk_real;
-        size_t bytes_lidos = fread(buffer + bytes_sobrepostos, 1, bytes_para_ler, arquivo);
+    size_t bytes_lidos = fread(buf[atual] + bytes_sobrepostos, 1, (size_t)chunk_real, arquivo);
 
-        if (bytes_lidos == 0) {
-            if (ferror(arquivo)) {
-                fprintf(stderr, "Erro durante a leitura do arquivo\n");
-                free(buffer_base);
-                fclose(arquivo);
-                return -1;
-            }
-            break;
-        }
-
+    while (bytes_lidos > 0) {
+        int proximo = 1 - atual;
         long long tamanho_valido = (long long)bytes_sobrepostos + (long long)bytes_lidos;
+        size_t lidos_prox = 0;
 
-        total += bmh_paralelo_buffer(
-            buffer,
-            tamanho_valido,
-            palavra,
-            m,
-            tabela,
-            num_threads
-        );
-
-        if (sobreposicao > 0) {
-            if ((size_t)tamanho_valido >= sobreposicao) {
-                memmove(buffer, buffer + tamanho_valido - (long long)sobreposicao, sobreposicao);
-                bytes_sobrepostos = sobreposicao;
-            } else {
-                memmove(buffer, buffer, (size_t)tamanho_valido);
-                bytes_sobrepostos = (size_t)tamanho_valido;
-            }
-        } else {
-            bytes_sobrepostos = 0;
+        if (sobreposicao > 0 && (size_t)tamanho_valido >= sobreposicao) {
+            memcpy(buf[proximo], buf[atual] + tamanho_valido - (long long)sobreposicao, sobreposicao);
         }
+
+        #pragma omp parallel sections num_threads(2)
+        {
+            #pragma omp section
+            {
+                lidos_prox = fread(buf[proximo] + sobreposicao, 1, (size_t)chunk_real, arquivo);
+            }
+
+            #pragma omp section
+            {
+                total += bmh_paralelo_buffer(  
+                    buf[atual], tamanho_valido, palavra, m, tabela, num_threads,salto_match
+                );
+            }
+        }
+
+        if (ferror(arquivo)) {
+            fprintf(stderr, "Erro durante a leitura do arquivo\n");
+            free(base[0]); free(base[1]);
+            fclose(arquivo);
+            return -1;
+        }
+
+        atual = proximo;
+        bytes_sobrepostos = (lidos_prox > 0) ? sobreposicao : 0;
+        bytes_lidos = lidos_prox;
     }
 
-    free(buffer_base);
+    free(base[0]);
+    free(base[1]);
     fclose(arquivo);
     return total;
 }
