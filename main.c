@@ -25,6 +25,40 @@
     #define FSEEK64 fseeko
     #define FTELL64 ftello
 #endif
+/**
+ * Calcula o salto seguro apos um match usando a KMP failure function.
+ *
+ * Para palavras sem sobreposicao (ex: "abc"), retorna m, permitindo o
+ * maximo salto possivel. Para palavras com sobreposicao (ex: "aaaaaa"),
+ * retorna o menor salto que nao perde matches sobrepostos.
+ *
+ * @param palavra Palavra buscada em bytes.
+ * @param m Tamanho da palavra em bytes.
+ * @return Quantidade de posicoes a avancar apos um match confirmado.
+ */
+
+static size_t calcula_salto_pos_match(const unsigned char *palavra, size_t m) {
+    if (m == 0) return 1;
+    if (m == 1) return 1;
+
+    size_t *falha = calloc(m, sizeof(size_t));
+    if (!falha) return 1; 
+
+    falha[0] = 0;
+    size_t k = 0;
+    for (size_t i = 1; i < m; i++) {
+        while (k > 0 && palavra[k] != palavra[i])
+            k = falha[k - 1];
+        if (palavra[k] == palavra[i])
+            k++;
+        falha[i] = k;
+    }
+
+   
+    size_t salto = m - falha[m - 1];
+    free(falha);
+    return salto;
+}
 
 /**
  * Monta a tabela de deslocamentos do algoritmo Boyer-Moore-Horspool.
@@ -110,7 +144,8 @@ static inline long long bmh_intervalo_propriedade(
     size_t tamanho_palavra,
     const size_t * __restrict__ tabela,
     long long inicio_propriedade,
-    long long fim_propriedade
+    long long fim_propriedade,
+    size_t salto_match
 ) {
     if (inicio_propriedade >= fim_propriedade || tamanho_texto <= 0) {
         return 0;
@@ -180,7 +215,7 @@ static inline long long bmh_intervalo_propriedade(
                 }
 
                 /* permite ocorrências sobrepostas */
-                i += 1;
+                i += (long long)salto_match;
                 continue;
             }
         }
@@ -206,7 +241,8 @@ static inline long long bmh_sequencial_buffer(
     long long tamanho,
     const unsigned char * __restrict__ palavra,
     size_t tamanho_palavra,
-    const size_t * __restrict__ tabela
+    const size_t * __restrict__ tabela,
+    size_t salto_match
 ) {
     return bmh_intervalo_propriedade(
         texto,
@@ -215,7 +251,8 @@ static inline long long bmh_sequencial_buffer(
         tamanho_palavra,
         tabela,
         0,
-        tamanho
+        tamanho,
+        salto_match
     );
 }
 
@@ -244,10 +281,10 @@ static inline long long bmh_paralelo_buffer(
     if (tamanho_palavra == 0 || tamanho <= 0) {
         return 0;
     }
-
+    size_t salto_match = calcula_salto_pos_match(palavra, tamanho_palavra);
     if (tamanho_palavra == 1) {
         long long total = 0;
-
+    
 #pragma omp parallel for reduction(+:total) schedule(static) num_threads(num_threads)
         for (int t = 0; t < num_threads; ++t) {
             long long inicio = (tamanho * t) / num_threads;
@@ -263,7 +300,7 @@ static inline long long bmh_paralelo_buffer(
     }
 
     if (tamanho < MIN_PARALLEL_BYTES || num_threads <= 1) {
-        return bmh_sequencial_buffer(texto, tamanho, palavra, tamanho_palavra, tabela);
+        return bmh_sequencial_buffer(texto, tamanho, palavra, tamanho_palavra, tabela, salto_match);
     }
 
     long long total = 0;
@@ -281,7 +318,8 @@ static inline long long bmh_paralelo_buffer(
             tamanho_palavra,
             tabela,
             inicio_propriedade,
-            fim_propriedade
+            fim_propriedade,
+            salto_match
         );
     }
 
@@ -358,6 +396,7 @@ long long conta_substrings_arquivo_bmh_sequencial(
 
     size_t tabela[TAMANHO_ALFABETO];
     monta_tabela_deslocamento(palavra, m, tabela);
+    size_t salto_match = calcula_salto_pos_match(palavra, m);
 
     long long tamanho_arquivo = pega_tamanho_arquivo(arquivo);
     if (tamanho_arquivo < 0) {
@@ -405,7 +444,8 @@ long long conta_substrings_arquivo_bmh_sequencial(
             tamanho_valido,
             palavra,
             m,
-            tabela
+            tabela,
+            salto_match
         );
 
         if (sobreposicao > 0) {
