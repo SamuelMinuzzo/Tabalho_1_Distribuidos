@@ -1,0 +1,37 @@
+% Tabelas geradas automaticamente
+
+\begin{table}[H]
+\centering
+\caption{Tempo médio de execução por tamanho de arquivo}
+\begin{tabular}{ccccc}
+\toprule
+Arquivo (GB) & Java Seq & Java Par & C Seq & C Par \\
+\midrule
+0.1 & 0.164 & 0.123 & 0.087 & 0.055 \\
+1 & 1.382 & 0.785 & 0.734 & 0.416 \\
+2 & 2.552 & 1.422 & 1.435 & 0.720 \\
+4 & 4.858 & 2.618 & 2.762 & 1.336 \\
+8 & 9.583 & 5.659 & 5.458 & 2.717 \\
+10 & 11.997 & 6.334 & 6.931 & 3.444 \\
+15 & 44.107 & 39.829 & 41.749 & 36.802 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Speedup médio por tamanho de arquivo}
+\begin{tabular}{ccc}
+\toprule
+Arquivo (GB) & Java & C \\
+\midrule
+0.1 & 1.343 & 1.622 \\
+1 & 1.829 & 1.837 \\
+2 & 1.876 & 2.132 \\
+4 & 1.953 & 2.176 \\
+8 & 1.852 & 2.118 \\
+10 & 2.008 & 2.121 \\
+15 & 1.111 & 1.140 \\
+\bottomrule
+\end{tabular}
+\end{table}
