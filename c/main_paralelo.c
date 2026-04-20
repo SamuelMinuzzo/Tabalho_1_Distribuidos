@@ -166,6 +166,13 @@ static inline long long bmh_com_prefetch_paralelo(const unsigned char * __restri
     for (int t = 0; t < num_threads; t++) {
         long long ini = divisoes[t];
         long long fim = divisoes[t + 1];
+        if (t<num_threads-1)
+        {
+            fim += (long long)(tamanho_palavra - 1);
+        }
+        if (fim > tamanho) {
+            fim = tamanho;
+        }
         long long tam_local = fim - ini;
 
         if (tam_local > 0) {
@@ -282,10 +289,10 @@ int main() {
 
     printf("palavra: %s\n", palavra);
 
-    clock_t ini = clock();
+    double ini = omp_get_wtime();
     long long count = conta_palavras_bmh(filename, (const unsigned char *)palavra, strlen(palavra));
-    clock_t fim = clock();
-    double tempo = (double)(fim - ini) / CLOCKS_PER_SEC;
+    double fim = omp_get_wtime();
+    double tempo = fim - ini;
 
     if (count >= 0) {
         printf("Tempo total de execucao: %.12f segundos\n", tempo);
