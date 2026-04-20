@@ -8,8 +8,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.*;
 import java.util.Locale;
+import java.util.concurrent.*;
 
 /**
  * Programa para contar ocorrencias de uma palavra em um arquivo de texto usando
@@ -30,6 +30,36 @@ public class Main {
     private static final int MIN_CHUNK_SIZE = 1 * 1024 * 1024;
     /** Limite minimo para ativar o processamento paralelo por buffer. */
     private static final int MIN_PARALLEL_BYTES = 4 * 1024 * 1024;
+
+
+    /* Calcula o salto a ser dado apos encontrar um match, permitindo sobreposição.
+     *
+     * O salto é baseado na função de falha do KMP, que indica quantos bytes
+     * do final da palavra podem ser reaproveitados para formar um novo match
+     * imediatamente após um match encontrado.
+     *
+     * @param palavra palavra buscada, convertida em bytes.
+     * @return quantidade de bytes a saltar para permitir sobreposição.
+     */
+
+    private static int calculaSaltoPosMatch(byte[] palavra) {
+        int m = palavra.length;
+        if (m <= 1) return 1;
+
+        int[] falha = new int[m];
+        falha[0] = 0;
+        int k = 0;
+
+        for (int i = 1; i < m; i++) {
+            while (k > 0 && palavra[k] != palavra[i])
+                k = falha[k - 1];
+            if (palavra[k] == palavra[i])
+                k++;
+            falha[i] = k;
+        }
+
+        return m - falha[m - 1];
+    }
 
     /**
      * Monta a tabela de deslocamento usada pelo algoritmo Boyer-Moore-Horspool.
@@ -152,7 +182,7 @@ public class Main {
                     }
 
                     // permite sobreposição
-                    i += 1;
+                    i += calculaSaltoPosMatch(palavra);
                     continue;
                 }
             }
