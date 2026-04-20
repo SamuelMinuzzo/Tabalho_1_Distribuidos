@@ -7,7 +7,7 @@ from statistics import mean
 EXEC_C = "./main" if os.name != "nt" else "main.exe"
 EXEC_JAVA = ["java", "Main"]
 
-PALAVRAS_TESTE = ["a", "como", "itaguai", "Bacamarte"]
+PALAVRAS_TESTE = ["a", "como", "Bacamarte"]
 
 ARQUIVOS = [
     "arquivo0.1GB.txt",
@@ -15,11 +15,10 @@ ARQUIVOS = [
     "arquivo2GB.txt",
     "arquivo4GB.txt",
     "arquivo8GB.txt",
-    "arquivo10GB.txt",
-    "arquivo15GB.txt",
+    "arquivo16GB.txt",
 ]
 
-LISTA_THREADS = [1, 2, 4, 8, 16, 20, 32, 40, 60, 80, 100, 120]
+LISTA_THREADS = [1, 2, 8, 20, 40, 80, 120, 160, 200]
 REPETICOES = 2
 OUTPUT_FILE = "resultados.csv"
 TIMEOUT = 3600
