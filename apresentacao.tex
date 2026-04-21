@@ -1,0 +1,492 @@
+\documentclass{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{graphicx}
+
+\usetheme{Madrid}
+
+\title{Análise de Programação Paralela\\
+na Busca de Substrings}
+\author{Samuel Minuzzo Pereira \\ Edilson Daniel de Souza}
+\institute{UTFPR}
+\date{\today}
+
+\begin{document}
+
+
+
+\frame{\titlepage}
+
+
+\begin{frame}{Introdução}
+
+\textbf{Busca de padrões em texto} é um problema clássico presente em:
+
+\begin{itemize}
+    \item indexação de documentos e sistemas de busca
+    \item análise de logs e monitoramento de sistemas
+    \item bioinformática e análise forense
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{Motivação prática:}
+\begin{itemize}
+    \item arquivos de texto podem chegar a \textbf{múltiplos gigabytes}
+    \item abordagens simples tornam-se inviáveis nessa escala
+    \item necessidade de algoritmos eficientes \textbf{e} paralelização
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{Este trabalho} avalia, na prática, o impacto de diferentes
+escolhas de implementação no desempenho computacional.
+
+\end{frame}
+
+
+\begin{frame}{Objetivo}
+
+\textbf{Objetivo geral:} implementar, executar e comparar quatro versões
+do problema de busca de substrings em arquivos de grande porte.
+
+\vspace{0.4cm}
+
+\begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Versões implementadas:}
+    \begin{itemize}
+        \item Java sequencial
+        \item Java paralelo (threads)
+        \item C sequencial
+        \item C paralelo (OpenMP)
+    \end{itemize}
+
+    \column{0.5\textwidth}
+    \textbf{Métricas avaliadas:}
+    \begin{itemize}
+        \item tempo de execução
+        \item speedup
+        \item corretude dos resultados
+    \end{itemize}
+\end{columns}
+
+\vspace{0.5cm}
+
+\textbf{Questões centrais:}
+\begin{itemize}
+    \item Quanto a paralelização melhora o desempenho?
+    \item Qual linguagem se sai melhor e por quê?
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}{Problema}
+
+\textbf{Definição:} contar todas as ocorrências de uma substring $P$
+em um arquivo texto $T$, incluindo ocorrências sobrepostas.
+
+\vspace{0.3cm}
+
+\textbf{Formalmente:} determinar o número de índices $i$ tais que:
+\[
+T[i\,..\,i+m-1] = P, \quad 0 \leq i \leq n-m
+\]
+
+onde $n = |T|$ e $m = |P|$.
+
+\vspace{0.3cm}
+
+\begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Entrada:}
+    \begin{itemize}
+        \item caminho do arquivo texto
+        \item substring buscada
+        \item número de threads
+    \end{itemize}
+
+    \column{0.5\textwidth}
+    \textbf{Saída:}
+    \begin{itemize}
+        \item total de ocorrências
+        \item tempo sequencial
+        \item tempo paralelo
+        \item speedup
+    \end{itemize}
+\end{columns}
+
+\vspace{0.3cm}
+
+\small\textit{O texto é tratado como sequência de bytes,
+tornando a solução independente de codificação.}
+
+\end{frame}
+
+
+\begin{frame}{Complexidade}
+
+\begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Busca ingênua:}
+    \begin{itemize}
+        \item alinha $P$ em cada posição de $T$
+        \item compara caractere a caractere
+        \item complexidade: $O(n \cdot m)$
+        \item inviável para arquivos de GBs
+    \end{itemize}
+
+    \column{0.5\textwidth}
+    \textbf{Boyer-Moore-Horspool:}
+    \begin{itemize}
+        \item pré-processa o padrão $P$
+        \item permite \textbf{saltar posições} do texto
+        \item pior caso ainda $O(n \cdot m)$
+        \item mas muito mais eficiente na prática
+    \end{itemize}
+\end{columns}
+
+\vspace{0.5cm}
+
+\textbf{Por que BMH e não KMP ou Boyer-Moore clássico?}
+\begin{itemize}
+    \item boa relação entre \textbf{simplicidade} e \textbf{desempenho prático}
+    \item adaptação natural para leitura em blocos (arquivos grandes)
+    \item tratamento direto byte a byte
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}{Boyer-Moore-Horspool}
+
+\textbf{Pré-processamento:} tabela de deslocamento para cada byte possível
+\[
+shift[P[i]] = m - 1 - i, \quad 0 \leq i < m-1
+\]
+Posições não presentes no padrão recebem deslocamento $m$.
+
+\vspace{0.2cm}
+
+\textbf{Funcionamento a cada etapa:}
+\begin{enumerate}
+    \item alinha $P$ a uma posição do texto
+    \item compara do \textbf{último} caractere para o primeiro
+    \item se coincidir totalmente: ocorrência encontrada
+    \item se não: consulta a tabela e \textbf{salta} posições
+\end{enumerate}
+
+\vspace{0.2cm}
+
+\end{frame}
+
+\begin{frame}
+\textbf{Salto pós-match via \textit{KMP failure function}:}
+
+\begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Padrão sem sobreposição:}\\
+    \texttt{Bacamarte} ($m = 9$)
+    \begin{itemize}
+        \item nenhum prefixo é sufixo
+        \item salto = $m = 9$
+        \item máximo aproveitamento
+    \end{itemize}
+
+    \column{0.5\textwidth}
+    \textbf{Padrão com sobreposição:}\\
+    \texttt{aa} ($m = 2$) em \texttt{aaaa}
+    \begin{itemize}
+        \item prefixo \texttt{a} também é sufixo
+        \item salto = $1$ (não perde matches)
+        \item ocorrências: 3
+    \end{itemize}
+\end{columns}
+
+
+
+\end{frame}
+
+
+\begin{frame}{Paralelização}
+
+\textbf{Desafio central:} o texto não pode ser dividido em partes
+independentes sem cuidado nas fronteiras.
+
+\vspace{0.2cm}
+
+\textbf{Problema das fronteiras:}
+\begin{itemize}
+    \item uma ocorrência pode \textbf{iniciar} num bloco e \textbf{terminar} no próximo
+    \item divisão ingênua causa perda ou dupla contagem de ocorrências
+\end{itemize}
+
+\vspace{0.2cm}
+
+\end{frame}
+
+\begin{frame}
+
+
+\textbf{Soluções adotadas:}
+\begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Sobreposição de blocos:}
+    \begin{itemize}
+        \item cada bloco lê $m-1$ bytes extras do bloco seguinte
+        \item garante que nenhuma ocorrência seja perdida
+    \end{itemize}
+
+    \column{0.5\textwidth}
+    \textbf{Intervalo de propriedade:}
+    \begin{itemize}
+        \item cada thread inspeciona além do seu limite
+        \item mas contabiliza \textbf{apenas} ocorrências cujo índice inicial pertence ao seu intervalo
+    \end{itemize}
+\end{columns}
+
+\vspace{0.2cm}
+
+\textbf{Double buffering (C paralelo):}
+\begin{itemize}
+    \item enquanto uma thread processa o bloco atual, outra já lê o próximo do disco
+    
+\end{itemize}
+
+
+\end{frame}
+
+\begin{frame}{Implementações}
+
+\textbf{Núcleo comum a todas as versões:}
+\begin{itemize}
+    \item algoritmo Boyer-Moore-Horspool
+    \item leitura em blocos (evita carregar GBs em memória)
+    \item sobreposição de $m-1$ bytes entre blocos consecutivos
+    \item salto pós-match via \textit{KMP failure function}
+\end{itemize}
+
+\vspace{0.3cm}
+
+\begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Java:}
+    \begin{itemize}
+        \item leitura: \texttt{BufferedInputStream}
+        \item paralelismo: \texttt{ExecutorService}
+        \item overhead da JVM e GC
+        \item maior portabilidade
+    \end{itemize}
+
+    \column{0.5\textwidth}
+    \textbf{C:}
+    \begin{itemize}
+        \item leitura binária com buffer manual
+        \item paralelismo: \texttt{OpenMP}
+        \item controle direto de memória
+        \item double buffering (versão paralela)
+    \end{itemize}
+\end{columns}
+
+\vspace{0.3cm}
+
+\end{frame}
+
+\begin{frame}{Ambiente de Testes}
+
+\begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Hardware:}
+    \begin{itemize}
+        \item \textbf{Modelo:} Acer Predator Helios Neo 16
+        \item \textbf{CPU:} Intel Core i7-13650HX
+        \item \textbf{Núcleos físicos:} 14
+        \item \textbf{Threads lógicas:} 20
+        \item \textbf{RAM:} 24 GB
+        \item \textbf{Disco:} SSD NVMe Kingston\\1 TB
+    \end{itemize}
+
+    \column{0.5\textwidth}
+    \textbf{Software:}
+    \begin{itemize}
+        \item \textbf{SO:} Windows 11 Home 64 bits
+        \item \textbf{Compilador C:} GCC 15.2.0
+        \item \textbf{JVM:} OpenJDK 17.0.18 (Temurin)
+        \item \textbf{Automação:} script Python
+    \end{itemize}
+
+    \vspace{0.4cm}
+
+    \textbf{Threads testadas:}\\
+    \vspace{0.1cm}
+    1, 2, 8, 20, 40, 80, 120, 160, 200
+\end{columns}
+
+\end{frame}
+\begin{frame}{Entradas}
+
+\textbf{Tamanhos de arquivo testados:}\\
+\vspace{0.1cm}
+0,1 GB \quad 1 GB \quad 2 GB \quad 4 GB \quad 8 GB \quad 16 GB
+
+\vspace{0.4cm}
+
+\textbf{Substrings escolhidas e sua relação com o BMH:}
+
+\vspace{0.2cm}
+
+\begin{tabular}{cll}
+\hline
+\textbf{Substring} & \textbf{Característica} & \textbf{Comportamento no BMH} \\
+\hline
+\texttt{a} & comprimento 1 & pior caso \\
+\texttt{como} & comprimento 4 & caso típico\\
+\texttt{Bacamarte} & comprimento 9 & melhor caso\\
+\hline
+\end{tabular}
+
+\vspace{0.3cm}
+
+
+\end{frame}
+
+
+
+\begin{frame}{Resultados — Tempo de Execução (segundos)}
+
+\centering
+\footnotesize
+\begin{tabular}{ccccc}
+\hline
+\textbf{Arquivo} & \textbf{Java Seq} & \textbf{Java Par} & \textbf{C Seq} & \textbf{C Par} \\
+\hline
+0,1 GB  & 0,159  & 0,121  & 0,078 & 0,082 \\
+1 GB    & 1,383  & 0,765  & 0,686 & 0,633 \\
+2 GB    & 2,483  & 1,324  & 1,263 & 1,051 \\
+4 GB    & 4,875  & 2,617  & 2,512 & 1,934 \\
+8 GB    & 9,530  & 4,932  & 4,878 & 3,663 \\
+16 GB   & 34,980 & 32,979 & 28,087 & 31,699 \\
+\hline
+\end{tabular}
+
+\vspace{0.4cm}
+
+\end{frame}
+
+\begin{frame}{Análise dos Resultados}
+
+\begin{columns}
+    \column{0.5\textwidth}
+    \textbf{C vs. Java:}
+    \begin{itemize}
+        \item C mantém menores tempos absolutos em vários cenários
+        \item Java apresentou melhor ganho relativo de paralelismo
+        \item em 16 GB, Java ainda ganha pouco com paralelismo
+        \item em 16 GB, C paralelo ficou pior que C sequencial
+    \end{itemize}
+
+    \vspace{0.3cm}
+
+    \textbf{Escalabilidade com threads:}
+    \begin{itemize}
+        \item escalabilidade não linear
+        \item melhores speedups surgem em faixas altas (80 a 160)
+        \item ganho marginal cai com gargalos de I/O e sincronização
+    \end{itemize}
+
+    \column{0.5\textwidth}
+    \textbf{Por que 16 GB quebrou o speedup?}
+    \begin{itemize}
+        \item arquivo excede cache efetivo do SO
+        \item leituras diretas do SSD a cada chunk
+        \item largura de banda do disco torna-se\\o gargalo dominante
+        \item mais threads não reduzem tempo de I/O
+    \end{itemize}
+
+    \vspace{0.3cm}
+
+    \textbf{Influência da substring:}
+    \begin{itemize}
+        \item \texttt{a}: pior desempenho (salto = 1)
+        \item \texttt{como}: desempenho moderado
+        \item \texttt{Bacamarte}: melhor desempenho\\(saltos grandes, padrão raro)
+    \end{itemize}
+\end{columns}
+
+\end{frame}
+\begin{frame}{Dificuldades Encontradas}
+
+\begin{columns}
+    \column{0.5\textwidth}
+
+    \textbf{Fronteiras entre blocos:}
+    \begin{itemize}
+        \item ocorrência pode cruzar dois chunks
+        \item solução: sobreposição de $m-1$ bytes
+    \end{itemize}
+
+    \vspace{0.3cm}
+
+    \textbf{Dupla contagem entre threads:}
+    \begin{itemize}
+        \item threads adjacentes inspecionam\\regiões sobrepostas
+        \item solução: intervalo de propriedade\\(cada thread conta apenas\\ocorrências do seu intervalo)
+    \end{itemize}
+
+    \column{0.5\textwidth}
+
+    \textbf{Salto pós-match:}
+    \begin{itemize}
+        \item avanço 1: correto, mas lento
+        \item avanço $m$: rápido, mas perde\\sobreposições
+        \item solução: \textit{KMP failure function}\\calcula o salto mínimo seguro
+    \end{itemize}
+
+    \vspace{0.3cm}
+
+    \textbf{Automação dos testes:}
+    \begin{itemize}
+        \item padronização de saída C e Java
+        \item diferenças de \textit{locale} no Java\\(\texttt{Locale.US} na formatação)
+        \item integração com script Python
+    \end{itemize}
+
+\end{columns}
+
+\end{frame}
+
+\begin{frame}{Conclusão}
+
+\textbf{O que foi alcançado:}
+\begin{itemize}
+    \item implementação e comparação de 4 versões do problema
+    \item algoritmo BMH com salto pós-match via \textit{KMP failure function}
+    \item double buffering na versão C paralela
+\end{itemize}
+
+\vspace{0.3cm}
+
+\textbf{Principais conclusões:}
+\begin{itemize}
+    \item C teve melhor tempo absoluto em boa parte dos cenários
+    \item Java paralelo teve melhor ganho relativo (speedup médio)
+    \item paralelismo é eficaz até 8 GB; em 16 GB o limite de I/O domina
+    \item BMH adequado para o problema, especialmente com padrões longos
+    \item não há uma solução única melhor para todos os critérios
+\end{itemize}
+
+\vspace{0.3cm}
+
+
+\end{frame}
+
+
+\begin{frame}
+\centering
+\Huge Obrigado!
+\end{frame}
+
+
+\end{document}
