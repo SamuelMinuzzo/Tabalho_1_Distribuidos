@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 ARQUIVO_CSV = "resultados.csv"
 PASTA_SAIDA = "graficos"
+THREADS_REFERENCIA = 20  # 16 não existe neste conjunto de dados
 
 
 def garantir_pasta_saida():
@@ -85,11 +86,14 @@ def grafico_tempo_sequencial_por_tamanho(df):
     salvar_grafico("tempo_sequencial_por_tamanho.png")
 
 
-def grafico_tempo_paralelo_por_tamanho(df, threads_referencia=16):
+def grafico_tempo_paralelo_por_tamanho(df, threads_referencia=THREADS_REFERENCIA):
     plt.figure(figsize=(9, 5))
 
     for impl in sorted(df["implementacao"].unique()):
-        sub = df[(df["implementacao"] == impl) & (df["threads"] == threads_referencia)]
+        sub = df[
+            (df["implementacao"] == impl) &
+            (df["threads"] == threads_referencia)
+        ]
 
         agrupado = (
             sub.groupby("tamanho_arquivo_gb", as_index=False)["tempo_par"]
@@ -186,8 +190,15 @@ def grafico_speedup_por_palavra(df):
     j_vals = []
 
     for palavra in palavras:
-        c = resumo[(resumo["implementacao"] == "C") & (resumo["palavra"] == palavra)]["speedup"]
-        j = resumo[(resumo["implementacao"] == "Java") & (resumo["palavra"] == palavra)]["speedup"]
+        c = resumo[
+            (resumo["implementacao"] == "C") &
+            (resumo["palavra"] == palavra)
+        ]["speedup"]
+
+        j = resumo[
+            (resumo["implementacao"] == "Java") &
+            (resumo["palavra"] == palavra)
+        ]["speedup"]
 
         c_vals.append(float(c.iloc[0]) if not c.empty else 0.0)
         j_vals.append(float(j.iloc[0]) if not j.empty else 0.0)
@@ -205,10 +216,78 @@ def grafico_speedup_por_palavra(df):
     salvar_grafico("speedup_por_palavra.png")
 
 
-def grafico_comparacao_seq_vs_par(df, implementacao="C", threads_referencia=16):
+def grafico_tempo_medio_por_palavra(df):
+    palavras = sorted(df["palavra"].unique())
+    x = range(len(palavras))
+    largura = 0.2
+
+    resumo = (
+        df.groupby(["implementacao", "palavra"], as_index=False)
+        .agg({
+            "tempo_seq": "mean",
+            "tempo_par": "mean"
+        })
+    )
+
+    c_seq_vals = []
+    c_par_vals = []
+    j_seq_vals = []
+    j_par_vals = []
+
+    for palavra in palavras:
+        c_row = resumo[
+            (resumo["implementacao"] == "C") &
+            (resumo["palavra"] == palavra)
+        ]
+        j_row = resumo[
+            (resumo["implementacao"] == "Java") &
+            (resumo["palavra"] == palavra)
+        ]
+
+        c_seq_vals.append(float(c_row["tempo_seq"].iloc[0]) if not c_row.empty else 0.0)
+        c_par_vals.append(float(c_row["tempo_par"].iloc[0]) if not c_row.empty else 0.0)
+        j_seq_vals.append(float(j_row["tempo_seq"].iloc[0]) if not j_row.empty else 0.0)
+        j_par_vals.append(float(j_row["tempo_par"].iloc[0]) if not j_row.empty else 0.0)
+
+    plt.figure(figsize=(11, 5.5))
+    plt.bar([i - 1.5 * largura for i in x], c_seq_vals, width=largura, label="C Seq")
+    plt.bar([i - 0.5 * largura for i in x], c_par_vals, width=largura, label="C Par")
+    plt.bar([i + 0.5 * largura for i in x], j_seq_vals, width=largura, label="Java Seq")
+    plt.bar([i + 1.5 * largura for i in x], j_par_vals, width=largura, label="Java Par")
+
+    plt.xticks(list(x), palavras)
+    plt.ylabel("Tempo médio (s)")
+    plt.title("Tempo médio por palavra (C e Java: sequencial vs paralelo)")
+    plt.grid(True, axis="y", alpha=0.3)
+    plt.legend(ncol=2)
+
+    salvar_grafico("tempo_medio_por_palavra_seq_par.png")
+
+
+def gerar_tabela_tempo_por_palavra(df):
+    resumo_palavra = (
+        df.groupby(["implementacao", "palavra"], as_index=False)
+        .agg({
+            "tempo_seq": "mean",
+            "tempo_par": "mean"
+        })
+        .sort_values(["palavra", "implementacao"])
+    )
+
+    caminho_csv = os.path.join(PASTA_SAIDA, "tabela_tempo_medio_por_palavra.csv")
+    resumo_palavra.to_csv(caminho_csv, sep=";", index=False)
+    print(f"Tabela de tempo médio por palavra salva: {caminho_csv}")
+
+    return resumo_palavra
+
+
+def grafico_comparacao_seq_vs_par(df, implementacao="C", threads_referencia=THREADS_REFERENCIA):
     plt.figure(figsize=(9, 5))
 
-    sub = df[(df["implementacao"] == implementacao) & (df["threads"] == threads_referencia)]
+    sub = df[
+        (df["implementacao"] == implementacao) &
+        (df["threads"] == threads_referencia)
+    ]
 
     seq = (
         sub.groupby("tamanho_arquivo_gb", as_index=False)["tempo_seq"]
@@ -222,8 +301,19 @@ def grafico_comparacao_seq_vs_par(df, implementacao="C", threads_referencia=16):
         .sort_values("tamanho_arquivo_gb")
     )
 
-    plt.plot(seq["tamanho_arquivo_gb"], seq["tempo_seq"], marker="o", label="Sequencial")
-    plt.plot(par["tamanho_arquivo_gb"], par["tempo_par"], marker="o", label="Paralelo")
+    plt.plot(
+        seq["tamanho_arquivo_gb"],
+        seq["tempo_seq"],
+        marker="o",
+        label="Sequencial"
+    )
+
+    plt.plot(
+        par["tamanho_arquivo_gb"],
+        par["tempo_par"],
+        marker="o",
+        label="Paralelo"
+    )
 
     plt.xlabel("Tamanho do arquivo (GB)")
     plt.ylabel("Tempo médio (s)")
@@ -319,14 +409,16 @@ def main():
         return
 
     grafico_tempo_sequencial_por_tamanho(df)
-    grafico_tempo_paralelo_por_tamanho(df, threads_referencia=16)
+    grafico_tempo_paralelo_por_tamanho(df, threads_referencia=THREADS_REFERENCIA)
     grafico_speedup_por_threads(df)
     grafico_speedup_medio_por_tamanho(df)
     grafico_speedup_por_palavra(df)
-    grafico_comparacao_seq_vs_par(df, implementacao="C", threads_referencia=16)
-    grafico_comparacao_seq_vs_par(df, implementacao="Java", threads_referencia=16)
+    grafico_tempo_medio_por_palavra(df)
+    grafico_comparacao_seq_vs_par(df, implementacao="C", threads_referencia=THREADS_REFERENCIA)
+    grafico_comparacao_seq_vs_par(df, implementacao="Java", threads_referencia=THREADS_REFERENCIA)
 
     resumo = gerar_tabelas_resumo(df)
+    gerar_tabela_tempo_por_palavra(df)
     gerar_tabela_latex(resumo)
 
     print("\nTodos os gráficos e tabelas foram gerados com sucesso.")

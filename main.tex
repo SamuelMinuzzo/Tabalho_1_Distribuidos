@@ -50,7 +50,7 @@
 \maketitle
 
 \begin{abstract}
-Este trabalho apresenta a implementação e a análise de versões sequenciais e paralelas para o problema de busca de substrings em arquivos texto de grandes. Foram desenvolvidas soluções em C e Java, contemplando uma versão sequencial e uma versão paralela em cada linguagem. Em C, a paralelização foi realizada com OpenMP, enquanto em Java foi utilizada uma abordagem com múltiplas threads por meio de \textit{ExecutorService} (Confirmar depois). O núcleo algorítmico das soluções desenvolvidas pelos autores do trabalho foi baseado no algoritmo Boyer-Moore-Horspool (BMH), adaptado para processamento em blocos e para contagem de ocorrências sobrepostas. Além disso, são discutidas as implementações desenvolvidas pela dupla e as implementações de referência fornecidas pelo colega de trabalho, permitindo uma comparação entre estratégias de mapeamento de arquivo, leitura em blocos, divisão de tarefas e sincronização. Os resultados experimentais são comparados em termos de tempo de execução e \textit{speedup}, buscando avaliar a eficiência das abordagens adotadas em diferentes tamanhos de entrada e diferentes níveis de paralelismo.
+Este trabalho apresenta a implementação e a análise de versões sequenciais e paralelas para o problema de busca de substrings em arquivos de texto grandes. As respectivas versões foram desenvolvidas nas linguagens de programação C e Java. Em C, a paralelização foi realizada utilizando o padrão OpenMP,por meio de diretivas \texttt{\#pragma omp}, enquanto em Java foi utilizada uma abordagem com múltiplas threads por meio do Framework \textit{ExecutorService}. O núcleo algorítmico das soluções é baseado no algoritmo Boyer-Moore-Horspool (BMH), adaptado para processamento de dados em blocos. Os resultados experimentais são comparados em termos de tempo de execução e \textit{speedup}, com o objetivo de avaliar a eficiência das abordagens adotadas em diferentes tamanhos de entrada, variando de 0,1 GB a 16 GB, e diferentes quantidades de threads, de 1 a 200.
 \end{abstract}
 
 \textbf{Palavras-chave:} Programação Paralela, Boyer-Moore-Horspool, OpenMP, Threads, Busca de Substrings, Desempenho.
@@ -59,9 +59,9 @@ Este trabalho apresenta a implementação e a análise de versões sequenciais e
 
 \section{Introdução}
 
-A busca por padrões em texto é um problema clássico da computação, presente em aplicações como indexação de documentos, sistemas de busca, mineração de dados, bioinformática, análise forense, processamento de grandes logs e monitoramento de sistemas. À medida que o volume de dados cresce, abordagens simples de comparação caractere a caractere tornam-se progressivamente mais custosas, tornando necessário o uso de algoritmos mais eficientes e de técnicas de paralelização.
+A busca por padrões em texto é um problema clássico da computação, presente em aplicações como indexação de documentos, sistemas de busca, mineração de dados, bioinformática, análise forense, processamento de logs e monitoramento de sistemas. À medida que o volume de dados cresce, abordagens simples de comparação caractere a caractere tornam-se progressivamente mais custosas, tornando necessário o uso de algoritmos mais eficientes e a utilização de técnicas de paralelização.
 
-Neste trabalho, foi estudado o problema de localizar e contar ocorrências de substrings em arquivos texto de grande porte, com tamanhos variando de frações de gigabyte até múltiplos gigabytes. O foco da análise foi avaliar como diferentes escolhas de implementação impactam o desempenho computacional, especialmente quando o problema é executado de forma sequencial e paralela.
+Neste trabalho, foi estudado o problema de contagem de ocorrências de substrings em arquivos texto com tamanhos variáveis, desde algumas centenas de megabytes até múltiplos gigabytes. O foco da análise foi avaliar como as diferentes escolhas de implementação impactam o desempenho computacional.
 
 A motivação do trabalho está diretamente associada à necessidade de compreender, na prática, como conceitos de programação paralela podem ser aplicados a um problema real de processamento intensivo de dados. Além disso, o tema permite comparar dois aspectos importantes da computação de alto desempenho: a eficiência algorítmica e a eficiência da exploração de paralelismo.
 
@@ -69,13 +69,10 @@ O objetivo geral do trabalho é implementar, executar e comparar quatro versões
 
 \begin{itemize}[leftmargin=*]
     \item versão sequencial em Java;
-    \item versão paralela em Java com threads;
+    \item versão paralela em Java utilizando threads;
     \item versão sequencial em C;
-    \item versão paralela em C com OpenMP.
+    \item versão paralela em C utilizando OpenMP.
 \end{itemize}
-
-Adicionalmente, o trabalho também considera a solução do colega como referência comparativa, permitindo discutir diferentes estratégias de implementação para o mesmo problema. Dessa forma, além da comparação entre linguagens e entre versões sequenciais e paralelas, também é possível analisar diferenças de projeto entre soluções distintas para o mesmo objetivo computacional.
-
 % ------------------------------------------------
 
 \section{Descrição do Problema}
@@ -108,7 +105,7 @@ A entrada do problema é composta por:
 \begin{itemize}[leftmargin=*]
     \item o caminho para um arquivo texto;
     \item a substring que será procurada;
-    \item no caso das versões paralelas, o número de threads a serem utilizadas.
+    \item o número de threads desejadas (utilizada para as versões paralelas).
 \end{itemize}
 
 \subsection{Saída}
@@ -126,7 +123,7 @@ A saída consiste em:
 
 Uma solução ingênua para o problema, baseada em comparação direta do padrão em todas as posições possíveis, possui complexidade de pior caso aproximadamente $O(n \cdot m)$. Para arquivos muito grandes, esse custo pode tornar-se significativo.
 
-Neste trabalho, a principal estratégia algorítmica adotada nas implementações dos autores foi o algoritmo Boyer-Moore-Horspool, que, embora também possa apresentar pior caso $O(n \cdot m)$, tende a apresentar desempenho muito melhor na prática para textos reais, pois utiliza deslocamentos que permitem pular posições do texto sem comparação completa em todas elas.
+Neste trabalho, a principal estratégia algorítmica adotada nas implementações foi o algoritmo Boyer-Moore-Horspool, que, embora também possa apresentar pior caso $O(n \cdot m)$ em situações onde a substring apresenta tamanho unitário, ou ainda, substrings sobrepostas, tende a apresentar desempenho ligeiramente superior na prática, quando se considera textos reais, pois utiliza deslocamentos que permitem pular posições do texto sem comparação completa em todas elas.
 
 Além da eficiência algorítmica, o problema também se mostrou adequado para paralelização, desde que o espaço de busca seja dividido cuidadosamente e que as fronteiras entre blocos sejam tratadas de forma correta para evitar perda ou dupla contagem de ocorrências.
 
@@ -155,6 +152,8 @@ shift[P[i]] = m - 1 - i
 para $0 \leq i < m-1$.
 
 Essa tabela informa o quanto o padrão pode ser deslocado quando o caractere alinhado ao final da janela de comparação causa um erro de correspondência.
+A implementação da contrução da tabela de saltos em C ilustra a simplicidade e eficiência do pré-processamento do algoritmo,
+
 
 \subsubsection{Funcionamento}
 
@@ -169,7 +168,7 @@ Em cada etapa:
 
 \subsubsection{Exemplo conceitual}
 
-Suponha o padrão \texttt{como}. O último caractere é \texttt{o}. Ao alinhar o padrão a uma posição do texto, o algoritmo observa primeiramente o byte correspondente a \texttt{o}. Se esse byte não coincidir, não é necessário comparar os demais bytes; o deslocamento é determinado diretamente pela tabela.
+Suponha o padrão \texttt{como}, o  último caractere é \texttt{o}. Ao alinhar o padrão a uma posição do texto, o algoritmo observa primeiramente o byte correspondente a \texttt{o}. Se esse byte não coincidir, não é necessário comparar os demais bytes; o deslocamento é determinado diretamente pela tabela.
 
 Esse comportamento reduz significativamente o número de comparações, principalmente quando o alfabeto do texto é relativamente amplo e o padrão não aparece com extrema frequência.
 
@@ -185,17 +184,35 @@ As principais vantagens do BMH são:
     \item boa integração com leitura em blocos para arquivos grandes.
 \end{itemize}
 
+\begin{lstlisting}[language=C, caption={Construção da tabela de deslocamentos do BMH em C}]
+static inline void monta_tabela_deslocamento(
+    const unsigned char *palavra,
+    size_t tamanho_palavra,
+    size_t *tabela
+) {
+    for (size_t i = 0; i < 256; ++i) {
+        tabela[i] = tamanho_palavra;
+    }
+
+    if (tamanho_palavra >= 2) {
+        for (size_t i = 0; i < tamanho_palavra - 1; ++i) {
+            tabela[palavra[i]] = tamanho_palavra - 1 - i;
+        }
+    }
+}
+\end{lstlisting}
+
 \subsubsection{Desvantagens do BMH}
 
 Como limitações, destacam-se:
 
 \begin{itemize}[leftmargin=*]
-    \item pior caso ainda proporcional a $O(n \cdot m)$;
-    \item necessidade de cuidado extra ao dividir o texto para processamento paralelo;
-    \item menor aproveitamento dos saltos quando o padrão é muito curto, especialmente de tamanho 1 (pior cenário).
+    \item pior caso ainda proporcional a $O(n \cdot m)$, atingido quando o padrão é altamente periódico e o texto é composto por repetições do mesmo caractere, o que minimiza os deslocamentos da tabela;
+    \item necessidade de cuidado extra ao dividir o texto para processamento paralelo, especialmente no tratamento de ocorrências nas fronteiras entre partições;
+    \item menor aproveitamento dos saltos quando o padrão é muito curto, especialmente de tamanho 1 (pior cenário), pois a tabela de deslocamento retorna sempre 1 independentemente do caractere encontrado, reduzindo o algoritmo a uma varredura completa.
 \end{itemize}
 
-% melhorar essa parte dando exemplos mais claros de como foi realizada a paralelização
+
 \subsection{Paralelização do problema}
 
 A paralelização da busca de substrings não é trivial, pois o texto não pode ser simplesmente dividido em partes independentes sem considerar as fronteiras. Se uma ocorrência começar no final de um bloco e terminar no início do próximo, ela poderá ser perdida.
@@ -212,27 +229,13 @@ Esse cuidado é essencial para garantir correção na contagem.
 % ------------------------------------------------
 
 \section{Implementações}
-
-Esta seção descreve as quatro versões consideradas no trabalho, bem como as decisões de projeto adotadas. Também são discutidas as soluções de referência do colega, utilizadas como base comparativa.
-
 \subsection{Visão geral das implementações}
 
 As implementações foram organizadas em duas linguagens, C e Java, e em dois modos de execução, sequencial e paralelo. Em ambos os casos, o problema atacado foi o mesmo: contagem de ocorrências de substring em arquivos de grande porte.
 
-As soluções desenvolvidas pelos autores adotaram uma base algorítmica comum:
-\begin{itemize}[leftmargin=*]
-    \item busca por substring literal;
-    \item tratamento de ocorrências sobrepostas;
-    \item leitura em blocos (\textit{chunks});
-    \item preservação de uma região de sobreposição entre blocos;
-    \item uso de Boyer-Moore-Horspool como núcleo de busca.
-\end{itemize}
-
-Já as soluções do colega adotaram uma estratégia distinta em alguns casos, especialmente em C, empregando mapeamento de arquivo em memória e uso de OpenMP diretamente sobre regiões do arquivo.
-
 \subsection{Versão Sequencial em Java}
 
-A versão sequencial em Java desenvolvida pelos autores foi construída com foco em manter a mesma lógica algorítmica da versão em C, permitindo uma comparação justa entre linguagens.
+A versão sequencial em Java desenvolvida foi construída com foco em manter a mesma lógica algorítmica da versão em C, permitindo uma comparação justa entre linguagens.
 
 \subsubsection{Estrutura da solução}
 
@@ -250,125 +253,135 @@ Essa abordagem evita a necessidade de carregar o arquivo inteiro em memória, o 
 
 \subsubsection{Motivação da escolha}
 
-A escolha de leitura em blocos em Java foi motivada por:
-
-\begin{itemize}[leftmargin=*]
-    \item portabilidade da implementação;
-    \item controle explícito da memória utilizada;
-    \item possibilidade de manter a mesma semântica do código em C;
-    \item facilidade de adaptação futura para a versão paralela.
-\end{itemize}
+A escolha pela leitura em blocos na implementação em Java foi motivada principalmente pela necessidade de lidar com arquivos de grande porte sem comprometer o uso de memória. Essa abordagem permite processar o arquivo de forma incremental, evitando a necessidade de carregá-lo integralmente em memória, o que seria inviável para entradas de vários gigabytes. Além disso, essa estratégia facilita a manutenção de uma semântica consistente com a implementação em C, permitindo uma comparação mais justa entre as linguagens. Outro fator relevante foi a facilidade de adaptação dessa estrutura para a versão paralela, uma vez que o processamento em blocos naturalmente se presta à divisão de trabalho entre múltiplas threads.
 
 \subsubsection{Vantagens}
 
-\begin{itemize}[leftmargin=*]
-    \item boa organização estrutural;
-    \item menor risco de esgotamento de memória;
-    \item boa correspondência conceitual com a versão sequencial em C;
-    \item fácil integração com o sistema de automação dos testes.
-\end{itemize}
+A abordagem adotada apresenta como principal vantagem a boa organização estrutural do código, tornando o fluxo de leitura e processamento mais claro e previsível. O uso de leitura em blocos reduz significativamente o risco de esgotamento de memória, especialmente em cenários com arquivos muito grandes. Além disso, a similaridade conceitual com a versão em C facilita a análise comparativa entre as implementações. Outro ponto positivo é a integração direta com o sistema de automação dos testes, permitindo a execução consistente dos experimentos em diferentes cenários.
 
 \subsubsection{Desvantagens}
 
-\begin{itemize}[leftmargin=*]
-    \item maior overhead da máquina virtual Java;
-    \item custo adicional de gerenciamento de memória;
-    \item desempenho inferior ao C em operações intensivas de baixo nível.
-\end{itemize}
+Por outro lado, a implementação em Java apresenta algumas desvantagens inerentes à própria linguagem. O uso da máquina virtual introduz um overhead adicional, especialmente em operações intensivas de baixo nível, como o processamento byte a byte realizado pelo algoritmo. Além disso, o gerenciamento automático de memória pode introduzir custos indiretos, como pausas ocasionais do coletor de lixo. Em comparação com a linguagem C, essas características resultam, em geral, em um desempenho inferior em tarefas altamente dependentes de eficiência computacional.
 
 \subsection{Versão Sequencial em C}
 
-A versão sequencial em C foi construída com a mesma ideia central da implementação em Java, porém explorando recursos de mais baixo nível da linguagem, como controle manual de memória, alinhamento de buffer e maior proximidade do hardware.
+A versão sequencial em C foi desenvolvida com base na mesma lógica utilizada na implementação em Java, porém explorando características de mais baixo nível da linguagem. Essa abordagem permite maior controle sobre a alocação de memória, alinhamento de dados e operações de leitura, resultando em uma execução mais eficiente.
 
 \subsubsection{Estrutura da solução}
 
-A solução sequencial em C:
-
-\begin{enumerate}[leftmargin=*]
-    \item abre o arquivo em modo binário;
-    \item ajusta um buffer de E/S com \texttt{setvbuf};
-    \item monta a tabela de deslocamentos do BMH;
-    \item lê o arquivo em blocos grandes;
-    \item preserva uma região de sobreposição entre blocos;
-    \item executa a busca sequencial no bloco.
-\end{enumerate}
-
-Além disso, a implementação faz uso de um tratamento específico para padrões de tamanho 1, contando ocorrências de um único byte de forma direta, o que é vantajoso para palavras muito curtas.
+Na implementação em C, o arquivo é aberto em modo binário e um buffer de entrada é configurado manualmente para otimizar a leitura. Em seguida, é construída a tabela de deslocamentos do algoritmo Boyer-Moore-Horspool. O arquivo é então processado em blocos, preservando uma pequena região de sobreposição entre leituras consecutivas para evitar perda de ocorrências na fronteira dos chunks. Para padrões de tamanho unitário, a implementação utiliza uma estratégia otimizada de contagem direta, reduzindo o custo computacional nesse caso específico.
 
 \subsubsection{Particularidades}
 
-A versão em C permite maior controle sobre:
-\begin{itemize}[leftmargin=*]
-    \item tamanho dos buffers;
-    \item estratégia de alinhamento em memória;
-    \item custo de abstrações;
-    \item medição mais precisa do tempo de execução.
-\end{itemize}
+Uma das principais características da implementação em C é o controle mais refinado sobre aspectos internos da execução, como o tamanho dos buffers, o alinhamento em memória e o custo das abstrações utilizadas. Isso permite um uso mais eficiente dos recursos do hardware, além de possibilitar medições de tempo mais precisas.
+
+Adicionalmente, as implementações incorporam o cálculo do salto seguro pós-match por meio da \textit{KMP failure function}. Após confirmar uma ocorrência, o algoritmo original avançaria apenas uma posição, o que é correto mas desnecessariamente lento para padrões sem sobreposição. A função \texttt{calcula\_salto\_pos\_match} pré-computa, a partir do vetor de falha do KMP, o menor avanço seguro após um match que não descarta nenhuma ocorrência sobreposta. Para padrões sem auto-sobreposição, como \texttt{Bacamarte}, o salto é igual ao
+comprimento do padrão, maximizando o desempenho. Para padrões com
+sobreposição, como \texttt{aaaaaa}, o salto é calculado precisamente para
+não perder matches consecutivos, visto que nessa string a palavra "aa" está presente 5 vezes. Esse cálculo é realizado uma única
+vez antes do loop de leitura, sem custo adicional por chunk processado.
+
+\begin{lstlisting}[language=C, caption={Cálculo do salto seguro após um match confirmado}]
+static size_t calcula_salto_pos_match(const unsigned char *palavra, size_t m) {
+    if (m == 0) return 1;
+    if (m == 1) return 1;
+
+    size_t *falha = calloc(m, sizeof(size_t));
+    if (!falha) return 1;
+
+    falha[0] = 0;
+    size_t k = 0;
+    for (size_t i = 1; i < m; i++) {
+        while (k > 0 && palavra[k] != palavra[i])
+            k = falha[k - 1];
+        if (palavra[k] == palavra[i])
+            k++;
+        falha[i] = k;
+    }
+
+    size_t salto = m - falha[m - 1];
+    free(falha);
+    return salto;
+}
+\end{lstlisting}
 
 \subsubsection{Vantagens}
 
-\begin{itemize}[leftmargin=*]
-    \item maior eficiência de baixo nível;
-    \item menor overhead de execução;
-    \item melhor aproveitamento de memória e cache;
-    \item base sólida para paralelização com OpenMP.
-\end{itemize}
+Como consequência dessas características, a versão em C apresenta maior eficiência de baixo nível, menor overhead de execução e melhor aproveitamento de cache e memória. Além disso, essa implementação serve como uma base sólida para a aplicação de técnicas de paralelização, como o uso de OpenMP.
 
 \subsubsection{Desvantagens}
 
-\begin{itemize}[leftmargin=*]
-    \item maior complexidade de implementação;
-    \item maior responsabilidade do programador com memória e corretude;
-    \item menor portabilidade imediata em comparação com Java quando há dependências específicas de compilação.
-\end{itemize}
+Em contrapartida, a implementação em C exige maior cuidado por parte do programador, especialmente no gerenciamento de memória e na garantia da corretude do código. A complexidade de implementação é maior, e a portabilidade pode ser reduzida dependendo das configurações do compilador e do ambiente de execução.
+
 
 \subsection{Versão Paralela com Threads (Java)}
 
-A versão paralela em Java foi desenvolvida preservando a lógica geral de leitura em blocos e BMH, mas introduzindo paralelização na etapa de processamento do bloco.
+A versão paralela em Java foi construída a partir da versão sequencial, mantendo a mesma lógica de leitura em blocos e o uso do algoritmo Boyer-Moore-Horspool, porém introduzindo paralelismo na etapa de processamento dos dados.
 
 \subsubsection{Estratégia de paralelização}
 
-A ideia central foi dividir o espaço de possíveis posições iniciais válidas do padrão dentro do bloco entre diferentes threads. Cada thread recebe um intervalo de propriedade. Ela pode inspecionar bytes além do seu limite final, mas só contabiliza uma ocorrência se o índice inicial da ocorrência pertencer ao intervalo que lhe foi atribuído.
+A estratégia adotada consiste em dividir o espaço de possíveis posições iniciais do padrão dentro de cada bloco entre múltiplas threads. Cada thread é responsável por um intervalo específico, sendo considerada ``proprietária'' das ocorrências cujo índice inicial pertence a esse intervalo. Para evitar perda de ocorrências nas fronteiras, cada thread pode inspecionar uma pequena região adicional além do seu limite, mas contabiliza apenas as ocorrências que realmente pertencem ao seu intervalo. Essa abordagem elimina tanto a perda quanto a duplicação de resultados.
 
-Esse método é importante porque evita:
+\begin{lstlisting}[language=Java, caption={Divisão do espaço de busca em intervalos de propriedade em Java}]
+int totalIniciosValidos = tamanhoTexto - m + 1;
+List<Future<Long>> futures = new ArrayList<>(numThreads);
 
-\begin{itemize}[leftmargin=*]
-    \item perda de ocorrências na fronteira entre threads;
-    \item dupla contagem da mesma ocorrência.
-\end{itemize}
+for (int t = 0; t < numThreads; t++) {
+    final int inicioPropriedade =
+        (int) (((long) totalIniciosValidos * t) / numThreads);
+    final int fimPropriedade =
+        (int) (((long) totalIniciosValidos * (t + 1)) / numThreads);
 
-\subsubsection{Divisão de tarefas}
+    futures.add(executor.submit(() ->
+        bmhIntervaloPropriedade(
+            texto,
+            tamanhoTexto,
+            palavra,
+            tabela,
+            inicioPropriedade,
+            fimPropriedade
+        )
+    ));
+}
+\end{lstlisting}
 
-A divisão foi feita de forma aproximadamente uniforme entre as threads, com base no número total de posições iniciais válidas para o padrão. Para coordenar a execução, foi utilizado \texttt{ExecutorService}, responsável por criar e gerenciar um conjunto fixo de threads.
+\subsubsection{Execução e sincronização}
 
-\subsubsection{Sincronização}
+A execução paralela é gerenciada por meio de um \textit{ExecutorService}, responsável por distribuir as tarefas entre as threads disponíveis. Cada tarefa retorna uma contagem parcial de ocorrências, e a soma final é realizada após a conclusão de todas as execuções. Essa estratégia reduz a necessidade de sincronização explícita e evita o uso de regiões críticas frequentes, o que contribui para um melhor desempenho.
 
-A sincronização explícita foi minimizada, pois cada tarefa retorna uma contagem local, e a soma final é realizada após a obtenção dos resultados das \textit{futures}. Isso reduz a necessidade de regiões críticas frequentes e tende a melhorar o desempenho.
+\subsubsection{Vantagens e desvantagens}
 
-\subsubsection{Vantagens}
-
-\begin{itemize}[leftmargin=*]
-    \item paralelização relativamente limpa e bem encapsulada;
-    \item boa correspondência conceitual com a versão OpenMP em C;
-    \item facilidade de ajuste do número de threads;
-    \item menor risco de condições de corrida no contador global.
-\end{itemize}
-
-\subsubsection{Desvantagens}
-
-\begin{itemize}[leftmargin=*]
-    \item maior overhead de criação e gerenciamento de tarefas;
-    \item dependência do comportamento do coletor de lixo e da JVM;
-    \item possível custo adicional de sincronização interna do \texttt{ExecutorService}.
-\end{itemize}
+A principal vantagem dessa abordagem é a simplicidade estrutural da paralelização, que se integra naturalmente à lógica sequencial já existente. Além disso, o modelo é flexível, permitindo ajustar facilmente o número de threads. No entanto, o uso de threads em Java envolve overhead adicional, tanto na criação quanto no gerenciamento das tarefas, além de depender do comportamento da máquina virtual e do coletor de lixo, o que pode impactar o desempenho em comparação com soluções em C.
 
 \subsection{Versão Paralela com OpenMP (C)}
 
-A versão paralela em C utilizou OpenMP para paralelizar a busca em cada bloco do arquivo. O princípio de divisão do espaço de busca foi semelhante ao adotado na versão Java, mas com a vantagem de um ambiente de execução mais leve e de menor overhead.
+A versão paralela em C utiliza OpenMP para explorar paralelismo de forma mais direta e eficiente. Nesse caso, a divisão do trabalho segue o mesmo princípio adotado na versão em Java, mas com menor overhead de execução.
 
 \subsubsection{Uso de \texttt{\#pragma omp}}
 
-A paralelização foi implementada com diretivas \texttt{\#pragma omp parallel for reduction(+:total)}, permitindo que diferentes threads processem subintervalos do espaço de busca em paralelo e que as contagens parciais sejam acumuladas de forma segura por meio de \textit{reduction}.
+A paralelização é realizada por meio de diretivas \texttt{\#pragma omp parallel for} combinadas com a cláusula \texttt{reduction}, que permite acumular de forma segura as contagens parciais geradas por cada thread. Esse modelo simplifica a implementação e reduz a necessidade de controle manual de sincronização.
+
+\subsubsection{Double buffering}
+A versão paralela em C implementa a técnica de \textit{double buffering} com o objetivo de sobrepor as etapas de E/S e processamento, reduzindo o tempo total de execução. Em vez de executar leitura e processamento de forma sequencial, são utilizados dois buffers alternados que permitem a construção de um pipeline entre CPU e disco. Enquanto um dos buffers é processado pelas threads responsáveis pela busca da substring, o outro é preenchido por uma thread dedicada à leitura do próximo \textit{chunk} a partir do disco, utilizando uma região com \texttt{\#pragma omp parallel sections}. Dessa forma, as operações de leitura e processamento ocorrem de maneira concorrente. Para garantir a corretude na detecção de padrões que cruzam as fronteiras entre \textit{chunks}, uma região de sobreposição (overlap) é copiada do final do buffer atual para o início do próximo antes do início do processamento paralelo. Isso assegura que nenhuma ocorrência da substring seja perdida devido à segmentação dos dados. Com essa abordagem, o tempo total por \textit{chunk} tende a ser limitado pelo máximo entre o tempo de leitura e o tempo de processamento, em vez da soma de ambos. Essa sobreposição é particularmente eficaz quando o sistema não está completamente limitado pela largura de banda de E/S, permitindo melhor aproveitamento dos recursos computacionais.
+
+\begin{lstlisting}[language=C, caption={Sobreposição entre leitura e processamento com double buffering}]
+#pragma omp parallel sections num_threads(2)
+{
+    #pragma omp section
+    {
+        lidos_prox = fread(buf[proximo] + sobreposicao, 1,
+                           (size_t)chunk_real, arquivo);
+    }
+
+    #pragma omp section
+    {
+        total += bmh_paralelo_buffer(
+            buf[atual], tamanho_valido, palavra, m,
+            tabela, num_threads, salto_match
+        );
+    }
+}
+\end{lstlisting}
 
 \subsubsection{Tipo de paralelismo}
 
@@ -377,6 +390,25 @@ O paralelismo utilizado é do tipo \textit{data parallelism}, no qual diferentes
 \subsubsection{Tratamento das fronteiras}
 
 A mesma ideia de intervalo de propriedade foi aplicada: cada thread recebe um conjunto de posições iniciais válidas e pode inspecionar além da sua região, mas apenas contabiliza as ocorrências que efetivamente se iniciam dentro do seu intervalo.
+
+\begin{lstlisting}[language=C, caption={Paralelização da busca no buffer com OpenMP}]
+#pragma omp parallel for reduction(+:total) schedule(static) num_threads(num_threads)
+for (int t = 0; t < num_threads; ++t) {
+    long long inicio_propriedade = (total_inicios_validos * t) / num_threads;
+    long long fim_propriedade    = (total_inicios_validos * (t + 1)) / num_threads;
+
+    total += bmh_intervalo_propriedade(
+        texto,
+        tamanho,
+        palavra,
+        tamanho_palavra,
+        tabela,
+        inicio_propriedade,
+        fim_propriedade,
+        salto_match
+    );
+}
+\end{lstlisting}
 
 \subsubsection{Vantagens}
 
@@ -390,46 +422,16 @@ A mesma ideia de intervalo de propriedade foi aplicada: cada thread recebe um co
 \subsubsection{Desvantagens}
 
 \begin{itemize}[leftmargin=*]
-    \item exige compilador com suporte a OpenMP;
     \item maior sensibilidade à arquitetura e ao ambiente de execução;
     \item necessidade de cuidado com equilíbrio de carga e efeitos de memória compartilhada.
 \end{itemize}
-
-\subsection{Implementações de referência do colega}
-
-Além das implementações desenvolvidas pelos autores, também foram analisadas as soluções do colega de trabalho, utilizadas como base comparativa.
-
-\subsubsection{Solução em C do colega}
-
-A solução do colega em C utilizou mapeamento de arquivo em memória (\texttt{mmap} em Unix e \texttt{MapViewOfFile} em Windows) e uma varredura sobre os bytes mapeados. Na versão paralela, o arquivo foi dividido em regiões processadas por diferentes threads via OpenMP, com uma pequena sobreposição para reduzir o risco de perda de ocorrências na fronteira.
-
-Essa abordagem apresenta vantagens importantes:
-\begin{itemize}[leftmargin=*]
-    \item acesso eficiente ao arquivo por meio do sistema operacional;
-    \item ausência de cópias explícitas de grandes blocos para buffers intermediários;
-    \item implementação compacta para leitura de arquivos grandes.
-\end{itemize}
-
-Por outro lado, a abordagem também requer cuidado:
-\begin{itemize}[leftmargin=*]
-    \item forte dependência do comportamento do sistema operacional e do subsistema de memória virtual;
-    \item risco de gargalos em regiões de fronteira;
-    \item necessidade de garantir corretude em divisões paralelas.
-\end{itemize}
-
-\subsubsection{Solução em Java do colega}
-
-A implementação do colega em Java foi baseada em \texttt{RandomAccessFile}, \texttt{FileChannel} e \texttt{ByteBuffer.allocateDirect}. A versão sequencial percorre os bytes do arquivo por meio de buffers diretos, enquanto a versão paralela divide o arquivo em partes entre threads e utiliza sincronização controlada para agregar resultados.
-
-Essa abordagem tem como mérito explorar diretamente recursos de E/S mais próximos do sistema operacional, o que pode ser vantajoso em determinadas situações. Em contrapartida, o tratamento correto das fronteiras entre partes e o custo de coordenação entre threads continuam sendo pontos críticos para o desempenho global.
-
 % ------------------------------------------------
 
 \section{Metodologia de Avaliação}
 
 \subsection{Ambiente de Testes}
 
-Todos os experimentos foram executados na máquina do autor, um notebook \textbf{Acer Predator Helios Neo 16 (PHN16-71)}. Os detalhes completos do ambiente de testes estão descritos abaixo:
+Todos os experimentos foram executados em um notebook, com as seguintes caracteristicas:
 
 \begin{itemize}[leftmargin=*]
     \item Modelo do equipamento: \textbf{Acer Predator Helios Neo 16 (PHN16-71)}
@@ -445,29 +447,29 @@ Todos os experimentos foram executados na máquina do autor, um notebook \textbf
 
 \subsection{Entradas utilizadas}
 
-Os testes foram conduzidos sobre arquivos texto com diferentes tamanhos, com o objetivo de avaliar escalabilidade e comportamento das soluções em diferentes volumes de dados. Entre os tamanhos considerados, destacam-se:
+Os testes foram conduzidos sobre arquivos texto com diferentes tamanhos, com o objetivo de avaliar escalabilidade e comportamento das soluções em diferentes volumes de dados. Sendo eles:
 
 \begin{itemize}[leftmargin=*]
     \item 0,1 GB
-    \item 0,5 GB
     \item 1 GB
     \item 2 GB
     \item 4 GB
-    \item 6 GB
     \item 8 GB
-    \item 10 GB
-    \item 15 GB
+    \item 16 GB
 \end{itemize}
 
 As palavras de teste foram escolhidas com comprimentos e frequências distintas, incluindo substrings muito curtas e substrings maiores, tais como:
 
 \begin{itemize}[leftmargin=*]
-    \item \texttt{a}
-    \item \texttt{de}
-    \item \texttt{como}
-    \item \texttt{itaguai}
-    \item \texttt{Bacamarte}
-    \item \texttt{Evarista}
+    \item \texttt{a} — comprimento 1, representa o pior caso do BMH,
+    pois a tabela de deslocamento retorna sempre 1 e nenhum salto é
+    possível. Esse caso exercita a função de contagem direta otimizada;
+    \item \texttt{como} — comprimento 4, representa um padrão típico
+    em textos, com frequência moderada e saltos médios de 3 a
+    4 posições;
+    \item \texttt{Bacamarte} — comprimento 9, representa um padrão
+    longo e raro, onde o BMH consegue aplicar grandes saltos na maioria
+    das posições, resultando nos melhores tempos por gigabyte processado.
 \end{itemize}
 
 \subsection{Procedimento experimental}
@@ -517,6 +519,23 @@ Além disso, a corretude da implementação foi verificada comparando-se, sempre
 % ------------------------------------------------
 \section{Resultados}
 
+\begin{table}[H]
+\centering
+\caption{Melhor configuração observada por palavra}
+\begin{tabular}{cccc}
+\toprule
+Palavra & Implementação & Threads & Melhor speedup \\
+\midrule
+a & Java & 160 & 2.545399 \\
+a & C & 1 & 15.496461 \\
+como & Java & 200 & 2.773069 \\
+como & C & 8 & 1.256957 \\
+Bacamarte & Java & 120 & 1.971667 \\
+Bacamarte & C & 160 & 1.479676 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Tempo de Execução}
 
 \begin{table}[H]
@@ -526,13 +545,12 @@ Além disso, a corretude da implementação foi verificada comparando-se, sempre
 \toprule
 Arquivo (GB) & Java Seq & Java Par & C Seq & C Par \\
 \midrule
-0.1 & 0.164 & 0.123 & 0.087 & 0.055 \\
-1 & 1.382 & 0.785 & 0.734 & 0.416 \\
-2 & 2.552 & 1.422 & 1.435 & 0.720 \\
-4 & 4.858 & 2.618 & 2.762 & 1.336 \\
-8 & 9.583 & 5.659 & 5.458 & 2.717 \\
-10 & 11.997 & 6.334 & 6.931 & 3.444 \\
-15 & 44.107 & 39.829 & 41.749 & 36.802 \\
+0.1 & 0.181 & 0.147 & 0.098 & 0.095 \\
+1 & 1.477 & 0.833 & 0.971 & 0.686 \\
+2 & 2.616 & 1.432 & 1.429 & 1.115 \\
+4 & 5.941 & 4.012 & 2.859 & 2.955 \\
+8 & 9.635 & 4.992 & 5.212 & 3.770 \\
+16 & 50.899 & 42.297 & 43.453 & 41.605 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -546,13 +564,26 @@ Arquivo (GB) & Java Seq & Java Par & C Seq & C Par \\
 \toprule
 Arquivo (GB) & Java & C \\
 \midrule
-0.1 & 1.343 & 1.622 \\
-1 & 1.829 & 1.837 \\
-2 & 1.876 & 2.132 \\
-4 & 1.953 & 2.176 \\
-8 & 1.852 & 2.118 \\
-10 & 2.008 & 2.121 \\
-15 & 1.111 & 1.140 \\
+0.1 & 1.248 & 1.038 \\
+1 & 1.862 & 1.598 \\
+2 & 1.949 & 1.329 \\
+4 & 1.703 & 1.217 \\
+8 & 2.096 & 1.436 \\
+16 & 1.210 & 1.052 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Speedup médio por palavra}
+\begin{tabular}{ccc}
+\toprule
+Palavra & Java & C \\
+\midrule
+a & 1.775 & 1.561 \\
+como & 1.852 & 1.122 \\
+Bacamarte & 1.407 & 1.152 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -567,8 +598,8 @@ Arquivo (GB) & Java & C \\
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.45\textwidth]{graficos/tempo_paralelo_por_tamanho_16_threads.png}
-\caption{Tempo paralelo médio por tamanho de arquivo (16 threads)}
+\includegraphics[width=0.45\textwidth]{graficos/tempo_paralelo_por_tamanho_20_threads.png}
+\caption{Tempo paralelo médio por tamanho de arquivo (20 threads)}
 \end{figure}
 
 \begin{figure}[H]
@@ -597,13 +628,13 @@ Arquivo (GB) & Java & C \\
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.45\textwidth]{graficos/comparacao_seq_vs_par_C_16_threads.png}
+\includegraphics[width=0.45\textwidth]{graficos/comparacao_seq_vs_par_C_20_threads.png}
 \caption{Comparação entre execução sequencial e paralela em C}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.45\textwidth]{graficos/comparacao_seq_vs_par_Java_16_threads.png}
+\includegraphics[width=0.45\textwidth]{graficos/comparacao_seq_vs_par_Java_20_threads.png}
 \caption{Comparação entre execução sequencial e paralela em Java}
 \end{figure}
 
@@ -616,7 +647,7 @@ Inicialmente, observa-se que a implementação em C apresentou desempenho superi
 
 Em relação à paralelização, ambas as linguagens apresentaram ganhos significativos para arquivos de tamanho intermediário. O speedup observado variou entre aproximadamente 1,8x e 2,1x na maioria dos casos, indicando bom aproveitamento do paralelismo disponível. A implementação em C com OpenMP apresentou resultados ligeiramente superiores, especialmente para arquivos entre 2 GB e 10 GB, onde atingiu speedups acima de 2,1x.
 
-Entretanto, para o maior arquivo testado (15 GB), houve uma queda significativa no ganho de paralelismo em ambas as linguagens, com speedup próximo de 1,1x. Esse comportamento indica a presença de gargalos relacionados à largura de banda de memória e ao custo de acesso ao armazenamento, limitando a eficiência do paralelismo. Nesse cenário, o aumento do número de threads não resulta em ganho proporcional de desempenho.
+Entretanto, para o maior arquivo testado (16GB), houve uma queda significativa no ganho de paralelismo em ambas as linguagens, com speedup próximo de 1,1x. Esse comportamento é explicado pela combinação de dois fatores. Primeiro, um arquivo de 15 GB excede a memória RAM disponível para cache do sistema operacional, forçando leituras diretas do armazenamento a cada chunk. Segundo, a largura de banda do SSD NVMe, embora elevada, torna-se o gargalo dominante quando múltiplas threads demandam dados simultaneamente sem que o sistema consiga antecipar as leituras. Nesse cenário, adicionar mais threads não reduz o tempo de leitura dos dados, e o ganho de CPU fica mascarado pela espera por dados. O tempo sequencial de 41s para 16 GB contra 6,9s para 10 GB — uma razão de 6x para um aumento de 1,5x no tamanho — reforça essa hipótese.
 
 Outro ponto relevante é que o crescimento do tempo de execução não é perfeitamente linear com o tamanho do arquivo, especialmente nas versões paralelas. Isso ocorre devido a fatores como cache, comportamento do sistema operacional e gerenciamento de threads.
 
@@ -629,15 +660,20 @@ De forma geral, os resultados mostram que:
     \item o algoritmo BMH mostrou-se eficiente e adequado para o problema.
 \end{itemize}
 
-\textbf{Inserir nesta seção a análise concreta dos gráficos e tabelas, destacando:}
+\textbf{C vs. Java nos cenários avaliados:}
+A implementação em C apresentou desempenho superior em todos os cenários experimentais, tendo maior vantagem em arquivos de tamanho menores a 10GB. Nesses cenário, o C paralelo chegou a atingir aproximadamente o dobro da taxa de processamento do Java paralelo, beneficiando-se de menor overhead de runtime, melhor controle de memória e otimizações de baixo nível. Para o maior volume de dados, a diferença relativa entre as linguagens diminuiu significativamente, pois ambas passaram a ser limitadas pelo mesmo gargalo de entrada/saída, reduzindo o impacto das otimizações computacionais.
 
-\begin{itemize}[leftmargin=*]
-    \item em quais cenários o C superou o Java;
-    \item em quais cenários o paralelismo foi mais vantajoso;
-    \item em que ponto o aumento do número de threads deixou de trazer benefícios;
-    \item como o tamanho da palavra influenciou o desempenho;
-    \item como a estratégia baseada em BMH se comportou em padrões curtos e longos.
-\end{itemize}
+\textbf{Cenários em que o paralelismo foi mais vantajoso:}
+O paralelismo trouxe maiores ganhos em arquivos de tamanho pequeno a médio, especialmente até cerca de 10 GB, onde o custo de leitura ainda não saturava completamente a largura de banda do sistema de armazenamento. Nesses casos, a divisão do trabalho entre múltiplas threads permitiu explorar melhor os recursos de CPU, reduzindo o tempo total de execução. 
+
+\textbf{Limite de escalabilidade com aumento de threads:}
+Os resultados indicam que o ganho de desempenho cresce de forma parcialmente linear com o aumento do número de threads, apresentando boa escalabilidade até aproximadamente 8 threads. A partir desse ponto, os ganhos tornam-se marginais, especialmente entre 8 e 20 threads. Esse comportamento evidencia a transição do gargalo de CPU na leitura do dados, onde a largura de banda de leitura do disco passa a limitar o desempenho global, tornando o aumento adicional de paralelismo pouco efetivo.
+
+\textbf{Influência do tamanho da palavra no desempenho:}
+O tamanho da substring teve impacto direto na eficiência do algoritmo. Padrões curtos resultaram em maior número de comparações, pois oferecem menos oportunidades de salto durante a busca. Por outro lado, padrões mais longos permitiram saltos maiores, reduzindo significativamente o número de acessos ao texto e melhorando o throughput. Assim, quanto maior o padrão, menor o custo relativo por byte processado, refletindo em melhores tempos de execução.
+
+\textbf{Comportamento do BMH para padrões curtos e longos:}
+Para padrões muito curtos, como uma substring de comprimento unitário, o algoritmo BMH perde sua principal vantagem, já que a tabela de deslocamento tende a retornar valores mínimos (tipicamente 1), resultando em uma varredura praticamente sequencial do texto. Nesse cenário, o desempenho depende fortemente de otimizações adicionais, neste caso o processamento em blocos. Em contraste, para padrões mais longos, o BMH explora eficientemente sua heurística de deslocamento, realizando saltos maiores e reduzindo o número de comparações, levando a um desempenho significativamente superior aos métodos tradicionais.
 
 % ------------------------------------------------
 
@@ -646,6 +682,10 @@ De forma geral, os resultados mostram que:
 Durante o desenvolvimento das implementações, diversas dificuldades técnicas e conceituais foram observadas.
 
 Uma das principais dificuldades foi garantir a corretude da contagem nas regiões de fronteira entre blocos e entre partições paralelas. Como a busca é por substring e não por palavra inteira, uma ocorrência pode iniciar em um bloco e terminar em outro, o que exige tratamento explícito de sobreposição.
+
+Outra dificuldade técnica foi determinar o avanço correto após uma ocorrência confirmada. Um avanço de uma posição é sempre correto, mas desperdiça saltos quando o padrão não tem auto-sobreposição. Um avanço igual ao comprimento do padrão é ótimo para padrões sem sobreposição,
+mas perde matches para padrões como \texttt{aa} em \texttt{aaaa}. A solução adotada foi calcular o salto mínimo seguro por meio da \textit{KMP failure function}, que determina o comprimento do maior prefixo do padrão que também é sufixo. Esse cálculo é feito uma única
+vez antes do processamento, sem custo adicional por iteração.
 
 Outro desafio importante foi evitar dupla contagem de ocorrências quando múltiplas threads inspecionam regiões adjacentes. A solução adotada nas implementações autorais foi o conceito de intervalo de propriedade, no qual cada thread é responsável apenas pelas ocorrências cujo índice inicial pertence ao intervalo que lhe foi atribuído.
 
@@ -666,6 +706,8 @@ No caso da paralelização em Java, foi necessário ainda lidar com o custo de g
 Este trabalho apresentou a implementação e análise de soluções sequenciais e paralelas para o problema de busca de substrings em arquivos de grande porte, utilizando o algoritmo Boyer-Moore-Horspool como base comum.
 
 Os resultados demonstraram que a implementação em C apresentou melhor desempenho geral, tanto na versão sequencial quanto na paralela. Isso se deve principalmente ao menor overhead da linguagem e ao maior controle sobre memória e operações de baixo nível.
+
+Entre as contribuições técnicas comuns às implementações em C e Java, destacam-se o cálculo do salto pós-match via \textit{KMP failure function}, que permite avanços maiores após cada ocorrência confirmada sem perder matches sobrepostos. Na versão em C, soma-se ainda o uso de \textit{double buffering} na versão paralela, que sobrepõe a leitura do próximo chunk ao processamento do atual, reduzindo o tempo ocioso das threads de CPU durante operações de leitura de dados.
 
 A paralelização mostrou-se eficaz, especialmente para arquivos de tamanho intermediário, onde foram observados speedups superiores a 2x. No entanto, para arquivos muito grandes, o ganho de desempenho foi limitado por fatores de hardware, como largura de banda de memória e custo de acesso a disco.
 
